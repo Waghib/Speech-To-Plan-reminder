@@ -135,73 +135,129 @@ def save_audio_file(base64_audio):
         logger.error(f"Error saving audio file: {str(e)}")
         return None
 
+def process_audio_in_chunks(audio, chunk_duration=30, overlap=1):
+    """Process long audio files in chunks."""
+    sample_rate = 16000  # Whisper's expected sample rate
+    chunk_length = chunk_duration * sample_rate
+    overlap_length = overlap * sample_rate
+    
+    if len(audio) <= chunk_length:
+        return model.transcribe(audio, fp16=False, language='en')["text"]
+        
+    full_transcript = []
+    position = 0
+    total_chunks = (len(audio) - overlap_length) // (chunk_length - overlap_length)
+    chunk_number = 0
+    
+    while position < len(audio):
+        chunk_number += 1
+        end = min(position + chunk_length, len(audio))
+        chunk = audio[position:end]
+        
+        # Skip if chunk is too short
+        if len(chunk) < sample_rate * 2:  # Skip if less than 2 seconds
+            break
+            
+        logger.info(f"Processing chunk {chunk_number}/{total_chunks} - {position/sample_rate:.1f}s to {end/sample_rate:.1f}s")
+        try:
+            result = model.transcribe(chunk, fp16=False, language='en')
+            transcript = result["text"].strip()
+            
+            if transcript:  # Only add non-empty transcriptions
+                full_transcript.append(transcript)
+                
+        except Exception as e:
+            logger.error(f"Error processing chunk {chunk_number}: {str(e)}")
+            
+        # Move to next chunk, ensuring we make forward progress
+        next_position = position + (chunk_length - overlap_length)
+        if next_position <= position:  # Ensure we always move forward
+            next_position = position + chunk_length
+        position = next_position
+        
+    return " ".join(full_transcript)
+
 @app.route('/transcribe', methods=['POST'])
 def transcribe_audio():
+    audio_path = None
     try:
-        # Get audio data from request
         audio_data = request.json.get('audio')
         if not audio_data:
             logger.error("No audio data received")
-            return jsonify({'error': 'No audio data received'}), 400
+            return jsonify({'success': False, 'error': 'No audio data received'}), 400
 
-        # Save the audio file
         audio_path = save_audio_file(audio_data)
         if not audio_path:
-            return jsonify({'error': 'Failed to save audio file'}), 500
+            return jsonify({'success': False, 'error': 'Failed to save audio file'}), 500
 
         try:
-            # Log file details
             file_size = os.path.getsize(audio_path)
             logger.info(f"Processing file: {audio_path} (Size: {file_size} bytes)")
 
-            # Load audio using ffmpeg
             logger.info("Loading audio file...")
             audio = load_audio(audio_path)
             if audio is None:
-                return jsonify({'error': 'Failed to load audio file or audio is silent'}), 500
+                return jsonify({'success': False, 'error': 'Failed to load audio file or audio is silent'}), 500
 
-            # Ensure audio is not empty and has valid values
             if len(audio) == 0:
-                return jsonify({'error': 'Audio file is empty'}), 400
+                return jsonify({'success': False, 'error': 'Audio file is empty'}), 400
 
             if not np.isfinite(audio).all():
-                return jsonify({'error': 'Audio contains invalid values'}), 400
+                return jsonify({'success': False, 'error': 'Audio contains invalid values'}), 400
 
-            # Convert to torch tensor
-            audio_tensor = torch.from_numpy(audio).to(DEVICE)
+            # Process audio based on its length
+            duration = len(audio) / 16000  # Calculate duration in seconds
+            logger.info(f"Audio duration: {duration:.1f} seconds")
 
-            # Transcribe audio
-            logger.info("Starting transcription...")
-            result = model.transcribe(
-                audio_tensor,
-                fp16=False,
-                language='en'
-            )
+            try:
+                if duration > 30:  # For files longer than 30 seconds
+                    logger.info("Long audio detected, processing in chunks...")
+                    transcription = process_audio_in_chunks(audio)
+                else:
+                    # Convert to torch tensor for short files
+                    audio_tensor = torch.from_numpy(audio).to(DEVICE)
+                    result = model.transcribe(
+                        audio_tensor,
+                        fp16=False,
+                        language='en'
+                    )
+                    transcription = result["text"].strip()
 
-            transcription = result["text"].strip()
-            logger.info(f"Transcription result: '{transcription}'")
+                logger.info(f"Transcription result: '{transcription}'")
 
-            # Log confidence scores if available
-            if "segments" in result:
-                for segment in result["segments"]:
-                    logger.debug(f"Segment confidence: {segment.get('confidence', 'N/A')}")
+                if not transcription:
+                    return jsonify({
+                        'success': True,
+                        'transcription': "No speech detected in the audio."
+                    })
 
-            return jsonify({
-                'success': True,
-                'transcription': transcription if transcription else "No speech detected in the audio."
-            })
+                return jsonify({
+                    'success': True,
+                    'transcription': transcription
+                })
 
-        except Exception as e:
-            logger.error(f"Error during transcription: {str(e)}", exc_info=True)
-            return jsonify({'error': str(e)}), 500
+            except Exception as e:
+                logger.error(f"Error during transcription: {str(e)}")
+                return jsonify({'success': False, 'error': f'Transcription error: {str(e)}'}), 500
 
         finally:
-            # Keep the file for debugging, but log its presence
-            logger.info(f"Debug: Audio file remains at {audio_path}")
+            # Delete the temporary audio file
+            if audio_path and os.path.exists(audio_path):
+                try:
+                    os.remove(audio_path)
+                    logger.info(f"Deleted temporary audio file: {audio_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete temporary file {audio_path}: {e}")
 
     except Exception as e:
         logger.error(f"Server error: {str(e)}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        if audio_path and os.path.exists(audio_path):
+            try:
+                os.remove(audio_path)
+                logger.info(f"Deleted temporary audio file: {audio_path}")
+            except Exception as e:
+                logger.warning(f"Failed to delete temporary file {audio_path}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     logger.info(f"Server starting. Temp directory: {TEMP_DIR}")

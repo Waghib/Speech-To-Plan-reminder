@@ -2,4 +2,8 @@
 .env
 
 # add client secret
-.client_secret_7820419231-jjj6sjfqt002rc6vufvhllbslk4lq4nk.apps.googleusercontent.com.json
+client_secret.json
+
+# add pycache
+*.pyc
+__pycache__

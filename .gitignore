@@ -7,3 +7,9 @@ client_secret.json
 # add pycache
 *.pyc
 __pycache__
+
+# add venv
+venv/
+
+# add ffmpeg
+ffmpeg/

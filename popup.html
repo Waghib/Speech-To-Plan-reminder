@@ -1,31 +1,95 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>My Chrome Extension</title>
+    <title>Audio to Text</title>
     <style>
         body {
             width: 300px;
-            padding: 10px;
+            padding: 15px;
             font-family: Arial, sans-serif;
         }
+
+        .upload-container {
+            border: 2px dashed #4CAF50;
+            border-radius: 4px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 15px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .upload-container:hover {
+            background-color: #f0f9f0;
+        }
+
+        .upload-container.dragover {
+            background-color: #e8f5e9;
+            border-color: #2e7d32;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .file-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+
         button {
             width: 100%;
-            padding: 8px;
-            margin: 5px 0;
+            padding: 10px;
             background-color: #4CAF50;
             color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
+            margin-bottom: 10px;
+            transition: background-color 0.3s;
         }
+
         button:hover {
             background-color: #45a049;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        #status {
+            color: #666;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        #output {
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 4px;
+            min-height: 50px;
+            background-color: #f9f9f9;
+            word-wrap: break-word;
+        }
+
+        .supported-formats {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
         }
     </style>
 </head>
 <body>
-    <h2>My Chrome Extension</h2>
-    <button id="actionButton">Click Me!</button>
+    <div class="upload-container" id="dropZone">
+        <input type="file" id="fileInput" accept="audio/*">
+        <div>Drop audio file here or click to upload</div>
+        <div class="supported-formats">Supported formats: MP3, WAV, M4A, etc.</div>
+        <div class="file-info" id="fileInfo"></div>
+    </div>
+    <button id="transcribeButton" disabled>Transcribe Audio</button>
+    <div id="status">Select an audio file to begin...</div>
     <div id="output"></div>
     <script src="popup.js"></script>
 </body>

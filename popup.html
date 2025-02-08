@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>Speech to Plan Reminder</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         body {
             width: 400px;
@@ -29,8 +30,21 @@
         }
 
         #micIcon {
-            font-size: 24px;
-            margin-bottom: 10px;
+            color: #4CAF50;
+            font-size: 48px;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+
+        #dropZone.recording #micIcon {
+            color: #f44336;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
         }
 
         #recordingStatus {
@@ -116,8 +130,8 @@
 </head>
 <body>
     <div id="dropZone">
-        <div id="micIcon">🎤</div>
-        <div>Click to Start Recording</div>
+        <i id="micIcon" class="fas fa-microphone"></i>
+        <div id="recordingText">Click to Start Recording</div>
         <div id="recordingStatus"></div>
     </div>
     <div class="progress-container" id="progressContainer">

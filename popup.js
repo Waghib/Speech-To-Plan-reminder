@@ -1,10 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const dropZone = document.getElementById('dropZone');
-    const recordingStatus = document.getElementById('recordingStatus');
-    const transcribeButton = document.getElementById('transcribeButton');
-    const status = document.getElementById('status');
-    const output = document.getElementById('output');
-    const progressContainer = document.getElementById('progressContainer');
+    const dropZone = document.querySelector('#dropZone');
+    const recordingStatus = document.querySelector('#recordingStatus');
+    const transcribeButton = document.querySelector('#transcribeButton');
+    const status = document.querySelector('#status');
+    const output = document.querySelector('#output');
+    const progressContainer = document.querySelector('#progressContainer');
 
     let mediaRecorder = null;
     let audioChunks = [];

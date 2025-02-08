@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>Speech to Plan Reminder</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         body {
             width: 400px;
@@ -17,20 +18,39 @@
             margin-bottom: 15px;
             cursor: pointer;
             transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
 
-        #dropZone.dragover {
-            background-color: #e8f5e9;
-            border-color: #2E7D32;
+        #dropZone.recording {
+            background-color: #ffebee;
+            border-color: #f44336;
         }
 
-        #fileInput {
-            display: none;
+        #micIcon {
+            color: #4CAF50;
+            font-size: 48px;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
         }
 
-        #fileInfo {
-            margin: 10px 0;
+        #dropZone.recording #micIcon {
+            color: #f44336;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        #recordingStatus {
+            font-size: 14px;
             color: #666;
+            margin-top: 5px;
         }
 
         #transcribeButton {
@@ -99,12 +119,6 @@
             100% { width: 100%; }
         }
 
-        .supported-formats {
-            font-size: 12px;
-            color: #666;
-            margin-top: 5px;
-        }
-
         .error {
             color: #f44336;
         }
@@ -116,11 +130,10 @@
 </head>
 <body>
     <div id="dropZone">
-        Drop audio file here or click to upload
-        <div class="supported-formats">Supported formats: MP3, WAV, M4A, etc.</div>
+        <i id="micIcon" class="fas fa-microphone"></i>
+        <div id="recordingText">Click to Start Recording</div>
+        <div id="recordingStatus"></div>
     </div>
-    <input type="file" id="fileInput" accept="audio/*">
-    <div id="fileInfo"></div>
     <div class="progress-container" id="progressContainer">
         <div class="progress-bar">
             <div class="progress-bar-inner"></div>

@@ -17,20 +17,26 @@
             margin-bottom: 15px;
             cursor: pointer;
             transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
 
-        #dropZone.dragover {
-            background-color: #e8f5e9;
-            border-color: #2E7D32;
+        #dropZone.recording {
+            background-color: #ffebee;
+            border-color: #f44336;
         }
 
-        #fileInput {
-            display: none;
+        #micIcon {
+            font-size: 24px;
+            margin-bottom: 10px;
         }
 
-        #fileInfo {
-            margin: 10px 0;
+        #recordingStatus {
+            font-size: 14px;
             color: #666;
+            margin-top: 5px;
         }
 
         #transcribeButton {
@@ -99,12 +105,6 @@
             100% { width: 100%; }
         }
 
-        .supported-formats {
-            font-size: 12px;
-            color: #666;
-            margin-top: 5px;
-        }
-
         .error {
             color: #f44336;
         }
@@ -116,11 +116,10 @@
 </head>
 <body>
     <div id="dropZone">
-        Drop audio file here or click to upload
-        <div class="supported-formats">Supported formats: MP3, WAV, M4A, etc.</div>
+        <div id="micIcon">🎤</div>
+        <div>Click to Start Recording</div>
+        <div id="recordingStatus"></div>
     </div>
-    <input type="file" id="fileInput" accept="audio/*">
-    <div id="fileInfo"></div>
     <div class="progress-container" id="progressContainer">
         <div class="progress-bar">
             <div class="progress-bar-inner"></div>

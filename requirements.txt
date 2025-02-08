@@ -1,4 +1,8 @@
-flask
-flask-cors
-openai-whisper
-soundfile
+fastapi
+uvicorn
+pydantic
+python-multipart
+openai-whisper==20231117
+soundfile==0.12.1
+numpy==1.24.3
+torch==2.1.1

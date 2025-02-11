@@ -39,7 +39,7 @@ Transform your spoken words into organized plans and reminders effortlessly with
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/Speech-To-Plan-reminder.git
+   git clone https://github.com/waghib/Speech-To-Plan-reminder.git
    cd Speech-To-Plan-reminder
    ```
 
@@ -85,4 +85,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 Speech-To-Plan Reminder revolutionizes the way we capture and organize our thoughts and tasks. By bridging the gap between natural speech and digital organization, it makes task management more accessible and efficient than ever before. Whether you're a busy professional, a student, or anyone who prefers speaking over typing, this tool transforms the way you plan and remember important tasks.
 
 ---
-Made with  for productivity enthusiasts everywhere
+Made with ❤️ by waghib for productivity enthusiasts everywhere

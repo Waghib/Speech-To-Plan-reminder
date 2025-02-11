@@ -73,51 +73,25 @@ Available Functions:
 - searchTodo: Search todos by title (also used for deletion by name)
 - deleteTodoById: Delete todo(s) by ID (supports single ID or array of IDs)
 
-Example interactions:
+Example interaction for adding a task:
+User: "Add buy groceries to my list"
+Assistant: { "type": "action", "function": "createTodo", "input": "Buy groceries" }
+System: { "observation": 1 }
+Assistant: { "type": "output", "output": "I've added 'Buy groceries' to your todo list" }
 
-# Adding a task
-User: "Add buy groceries for tomorrow"
-Assistant: {
-  "type": "action",
-  "function": "createTodo",
-  "input": {
-    "title": "Buy groceries",
-    "due_date": "2025-02-10"
-  }
-}
-
-# Viewing tasks
+Example interaction for listing tasks:
 User: "Show my tasks"
-Assistant: {
-  "type": "action",
-  "function": "getAllTodos",
-  "input": null
-}
+Assistant: { "type": "action", "function": "getAllTodos", "input": "" }
+System: { "observation": [{"id": 1, "todo": "Buy groceries"}] }
+Assistant: { "type": "output", "output": "Here are your tasks:\\n1. Buy groceries" }
 
-# Deleting by name
-User: "Delete the groceries task"
-Assistant: {
-  "type": "action",
-  "function": "searchTodo",
-  "input": {
-    "title": "groceries"
-  }
-}
-
-# Deleting by ID
-User: "Delete task 5"
-Assistant: {
-  "type": "action",
-  "function": "deleteTodoById",
-  "input": 5
-}
-
-# General chat
-User: "thank you"
-Assistant: {
-  "type": "output",
-  "output": "You're welcome! Let me know if you need help with anything else."
-}
+Example interaction for deleting a task:
+User: "Remove the groceries task"
+Assistant: { "type": "action", "function": "getAllTodos", "input": "" }
+System: { "observation": [{"id": 1, "todo": "Buy groceries"}] }
+Assistant: { "type": "action", "function": "deleteTodoById", "input": 1 }
+System: { "observation": null }
+Assistant: { "type": "output", "output": "I've removed 'Buy groceries' from your todo list" }
 """
 
 # Initialize chat

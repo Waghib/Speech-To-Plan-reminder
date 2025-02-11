@@ -1,17 +1,31 @@
 import os
-import base64
-import logging
-import numpy as np
+import json
 import torch
+import logging
 import whisper
 import soundfile as sf
+import numpy as np
 from typing import Optional, Dict, Any
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from tempfile import gettempdir
 import uvicorn
-import subprocess
+import google.generativeai as genai
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+from database import SessionLocal, Todo
+from sqlalchemy.orm import Session
+from sqlalchemy import or_
+import base64
+import shutil
+import time
+import asyncio
+import aiofiles
+
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,14 +34,70 @@ logger = logging.getLogger(__name__)
 # Constants
 TEMP_DIR = os.path.join(gettempdir(), 'audio_transcription')
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-# Create temp directory if it doesn't exist
+GEMINI_TEMP_DIR = os.path.join(gettempdir(), "speech_to_plan")
+FFMPEG_PATH = os.path.join(os.path.dirname(__file__), "ffmpeg", "ffmpeg.exe")
 os.makedirs(TEMP_DIR, exist_ok=True)
+os.makedirs(GEMINI_TEMP_DIR, exist_ok=True)
 
 # Load Whisper model
 logger.info(f"Loading Whisper model on {DEVICE}...")
 model = whisper.load_model("base")
 model.to(DEVICE)
+
+# Configure Gemini
+genai.configure(api_key=os.getenv("gemini_api_key"))
+gemini_model = genai.GenerativeModel('gemini-pro')
+
+SYSTEM_PROMPT = """You are an AI To-Do List Assistant. Your role is to help users manage their tasks by adding, viewing, updating, and deleting them.
+You MUST ALWAYS respond in JSON format with the following structure:
+
+For actions:
+{
+  "type": "action",
+  "function": "createTodo" | "getAllTodos" | "searchTodo" | "deleteTodoById",
+  "input": {  // The input for the function
+    "title": string,  // Required for createTodo and searchTodo
+    "due_date": string  // Optional ISO date for createTodo
+  } | number | number[]  // ID or array of IDs for deleteTodoById
+}
+
+For responses to the user:
+{
+  "type": "output",
+  "output": string  // Your message to the user
+}
+
+Available Functions:
+- getAllTodos: Get all todos from the database
+- createTodo: Create a todo with title and optional due_date
+- searchTodo: Search todos by title (also used for deletion by name)
+- deleteTodoById: Delete todo(s) by ID (supports single ID or array of IDs)
+
+Example interaction for adding a task:
+User: "Add buy groceries to my list"
+Assistant: { "type": "action", "function": "createTodo", "input": "Buy groceries" }
+System: { "observation": 1 }
+Assistant: { "type": "output", "output": "I've added 'Buy groceries' to your todo list" }
+
+Example interaction for listing tasks:
+User: "Show my tasks"
+Assistant: { "type": "action", "function": "getAllTodos", "input": "" }
+System: { "observation": [{"id": 1, "todo": "Buy groceries"}] }
+Assistant: { "type": "output", "output": "Here are your tasks:\\n1. Buy groceries" }
+
+Example interaction for deleting a task:
+User: "Remove the groceries task"
+Assistant: { "type": "action", "function": "getAllTodos", "input": "" }
+System: { "observation": [{"id": 1, "todo": "Buy groceries"}] }
+Assistant: { "type": "action", "function": "deleteTodoById", "input": 1 }
+System: { "observation": null }
+Assistant: { "type": "output", "output": "I've removed 'Buy groceries' from your todo list" }
+"""
+
+# Initialize chat
+chat = gemini_model.start_chat(history=[
+    {"role": "user", "parts": [SYSTEM_PROMPT]},
+])
 
 # Create FastAPI app
 app = FastAPI(title="Audio Transcription API")
@@ -41,6 +111,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static files
+current_dir = os.path.dirname(os.path.abspath(__file__))
+static_dir = os.path.join(current_dir, "static")
+os.makedirs(static_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
 class AudioData(BaseModel):
     audio: str
 
@@ -48,6 +124,9 @@ class TranscriptionResponse(BaseModel):
     success: bool
     transcription: Optional[str] = None
     error: Optional[str] = None
+
+class Message(BaseModel):
+    text: str
 
 def save_audio_file(audio_data: str) -> Optional[str]:
     """Save base64 audio data to a temporary file."""
@@ -78,7 +157,7 @@ def load_audio(file_path: str) -> Optional[np.ndarray]:
         
         # FFmpeg command to convert audio to the required format
         command = [
-            'ffmpeg/ffmpeg.exe',
+            FFMPEG_PATH,
             '-i', file_path,
             '-ar', '16000',  # Sample rate: 16kHz
             '-ac', '1',      # Mono channel
@@ -191,6 +270,167 @@ def process_audio_in_chunks(audio: np.ndarray, chunk_duration: int = 30, overlap
         
     return " ".join(transcriptions)
 
+# Dependency to get the database session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+async def process_chat_message(message: str, db: Session) -> dict:
+    try:
+        # Send message to Gemini
+        logger.info(f"Sending message to Gemini: {message}")
+        response = chat.send_message(message)
+        logger.info(f"Raw Gemini response: {response.text}")
+        
+        # If the message is about viewing todos, handle it directly
+        if any(word in message.lower() for word in ['show', 'display', 'list', 'what', 'todo', 'task', 'tomorrow']):
+            # Get all todos
+            todos = db.query(Todo).all()
+            
+            # Filter for tomorrow if requested
+            if 'tomorrow' in message.lower():
+                tomorrow = datetime.now().date() + timedelta(days=1)
+                todos = [todo for todo in todos if todo.due_date and todo.due_date.date() == tomorrow]
+                prefix = "Here are your todos for tomorrow"
+            else:
+                prefix = "Here are all your todos"
+            
+            # Format the response in a more readable way
+            if todos:
+                todo_list = "\n".join([
+                    f"- {todo.title} (Due: {todo.due_date.strftime('%Y-%m-%d') if todo.due_date else 'No due date'})"
+                    for todo in todos
+                ])
+                return {"reply": f"{prefix}:\n{todo_list}"}
+            else:
+                return {"reply": "You don't have any todos" + (" for tomorrow" if 'tomorrow' in message.lower() else " yet")}
+        
+        try:
+            action = json.loads(response.text)
+            logger.info(f"Parsed action from Gemini: {action}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini response as JSON: {response.text}")
+            return {"reply": "I apologize, but I couldn't understand how to process that. Could you please try:\n1. Using simpler phrases\n2. Breaking down your request\n3. Speaking more clearly"}
+        
+        if action["type"] == "output":
+            return {"reply": action["output"]}
+
+        if action["type"] == "action":
+            observation = None
+            
+            if action["function"] == "getAllTodos":
+                todos = db.query(Todo).all()
+                observation = [{"id": todo.id, "title": todo.title, "due_date": todo.due_date.isoformat() if todo.due_date else None} for todo in todos]
+                
+                if todos:
+                    todo_list = "\n".join([
+                        f"- {todo.title} (Due: {todo.due_date.strftime('%Y-%m-%d') if todo.due_date else 'No due date'})"
+                        for todo in todos
+                    ])
+                    return {"reply": f"Here are all your todos:\n{todo_list}"}
+                else:
+                    return {"reply": "You don't have any todos yet"}
+
+            elif action["function"] == "createTodo":
+                try:
+                    input_data = action["input"]
+                    due_date = None
+                    
+                    if input_data.get("due_date"):
+                        try:
+                            due_date = datetime.fromisoformat(input_data["due_date"])
+                            # Validate the date is not too far in the past or future
+                            today = datetime.now()
+                            if due_date.year < today.year - 1 or due_date.year > today.year + 10:
+                                logger.warning(f"Invalid date range: {due_date}")
+                                return {"reply": "I noticed an issue with the date. Could you please specify a date within a reasonable range?"}
+                        except ValueError as e:
+                            logger.error(f"Date parsing error: {str(e)}")
+                            return {"reply": "I had trouble understanding the date format. Could you please specify the date more clearly?"}
+                    
+                    new_todo = Todo(
+                        title=input_data["title"],
+                        due_date=due_date
+                    )
+                    db.add(new_todo)
+                    db.commit()
+                    db.refresh(new_todo)
+                    observation = {"id": new_todo.id}
+                    
+                except KeyError as e:
+                    logger.error(f"Missing required field in createTodo: {str(e)}")
+                    return {"reply": "I couldn't create the todo because some required information was missing. Please make sure to specify what you want to do."}
+
+            elif action["function"] == "searchTodo":
+                search_term = action["input"]["title"]
+                todos = db.query(Todo).filter(
+                    Todo.title.ilike(f"%{search_term}%")
+                ).all()
+                
+                if todos:
+                    # First, let's delete the matching todo
+                    for todo in todos:
+                        db.delete(todo)
+                    db.commit()
+                    deleted_titles = [todo.title for todo in todos]
+                    return {"reply": f"Deleted the following todos:\n" + "\n".join([f"- {title}" for title in deleted_titles])}
+                else:
+                    return {"reply": f"I couldn't find any todos matching '{search_term}'"}
+
+            elif action["function"] == "deleteTodoById":
+                todo_id = action["input"]
+                if isinstance(todo_id, list):
+                    # Handle bulk deletion
+                    success_count = 0
+                    for tid in todo_id:
+                        todo = db.query(Todo).filter(Todo.id == tid).first()
+                        if todo:
+                            db.delete(todo)
+                            success_count += 1
+                    db.commit()
+                    observation = {"deleted_count": success_count}
+                else:
+                    # Handle single deletion
+                    todo = db.query(Todo).filter(Todo.id == todo_id).first()
+                    if todo:
+                        db.delete(todo)
+                        db.commit()
+                        observation = True
+                    else:
+                        observation = False
+
+            try:
+                # Send observation back to AI
+                logger.info(f"Sending observation to Gemini: {observation}")
+                follow_up = chat.send_message(json.dumps({"observation": observation}))
+                follow_up_action = json.loads(follow_up.text)
+                return {"reply": follow_up_action["output"]}
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse Gemini follow-up response: {follow_up.text}")
+                return {"reply": "I've made the changes you requested, but I'm having trouble formulating a response. The action was completed successfully."}
+
+    except Exception as e:
+        logger.error(f"Error processing chat message: {str(e)}")
+        return {"reply": "I encountered an error while processing your request. Could you please try again or rephrase your request?"}
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    try:
+        html_path = os.path.join(current_dir, "popup.html")
+        if not os.path.exists(html_path):
+            logger.error(f"HTML file not found at: {html_path}")
+            raise HTTPException(status_code=404, detail="HTML file not found")
+            
+        with open(html_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return HTMLResponse(content=content)
+    except Exception as e:
+        logger.error(f"Error serving HTML: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/transcribe", response_model=TranscriptionResponse)
 async def transcribe_audio(audio_data: AudioData) -> TranscriptionResponse:
     """Transcribe audio data."""
@@ -244,9 +484,13 @@ async def transcribe_audio(audio_data: AudioData) -> TranscriptionResponse:
                         transcription="No speech detected in the audio."
                     )
 
+                # Process transcribed text with Gemini
+                chat_response = await process_chat_message(transcription, db=get_db())
+                
                 return TranscriptionResponse(
                     success=True,
-                    transcription=transcription
+                    transcription=transcription,
+                    chat_response=chat_response["reply"]
                 )
 
             except Exception as e:
@@ -274,6 +518,175 @@ async def transcribe_audio(audio_data: AudioData) -> TranscriptionResponse:
                 logger.warning(f"Failed to delete temporary file {audio_path}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-if __name__ == '__main__':
-    logger.info(f"Server starting. Temp directory: {TEMP_DIR}")
-    uvicorn.run(app, host="127.0.0.1", port=5000)
+@app.post("/transcribe_gemini")
+async def transcribe_audio_gemini(
+    audio: UploadFile = File(..., description="The audio file to transcribe"),
+    db: Session = Depends(get_db)
+):
+    audio_path = None
+    wav_path = None
+    try:
+        # Create temporary directory if it doesn't exist
+        os.makedirs(GEMINI_TEMP_DIR, exist_ok=True)
+        
+        # Generate a unique filename with timestamp
+        timestamp = int(time.time())
+        temp_filename = f"audio_{timestamp}.webm"  
+        audio_path = os.path.join(GEMINI_TEMP_DIR, temp_filename)
+        wav_path = os.path.join(GEMINI_TEMP_DIR, f"audio_{timestamp}.wav")
+        
+        logger.info(f"Processing audio file:")
+        logger.info(f"Input path: {audio_path}")
+        logger.info(f"Output path: {wav_path}")
+        logger.info(f"FFmpeg path: {FFMPEG_PATH}")
+        
+        # Save uploaded file
+        contents = await audio.read()
+        async with aiofiles.open(audio_path, 'wb') as out_file:
+            await out_file.write(contents)
+        
+        logger.info(f"Audio file saved ({len(contents)} bytes)")
+        
+        if not os.path.exists(audio_path):
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to save audio file at {audio_path}"
+            )
+        
+        # Convert WebM to WAV using ffmpeg
+        logger.info("Starting FFmpeg conversion...")
+        process = await asyncio.create_subprocess_exec(
+            FFMPEG_PATH, '-i', audio_path, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode != 0:
+            error_msg = stderr.decode() if stderr else "Unknown FFmpeg error"
+            logger.error(f"FFmpeg error: {error_msg}")
+            raise HTTPException(status_code=500, detail=f"Error converting audio format: {error_msg}")
+        
+        if not os.path.exists(wav_path):
+            raise HTTPException(
+                status_code=500,
+                detail=f"FFmpeg failed to create output file at {wav_path}"
+            )
+        
+        logger.info("FFmpeg conversion successful")
+        
+        # Load and transcribe audio
+        logger.info("Starting Whisper transcription...")
+        
+        if not os.path.exists(wav_path):
+            raise HTTPException(
+                status_code=500,
+                detail=f"WAV file not found at {wav_path} before Whisper processing"
+            )
+            
+        # Get file size and verify file
+        file_size = os.path.getsize(wav_path)
+        logger.info(f"WAV file size: {file_size} bytes")
+        logger.info(f"WAV file absolute path: {os.path.abspath(wav_path)}")
+        
+        try:
+            # Read the audio file directly using soundfile first to verify it
+            try:
+                import soundfile as sf
+                audio_data, sample_rate = sf.read(wav_path)
+                logger.info(f"Audio file info: {sf.info(wav_path)}")
+                logger.info(f"Audio data shape from soundfile: {audio_data.shape}")
+                logger.info(f"Sample rate: {sample_rate}")
+                
+                # Convert to float32 and normalize if needed
+                audio_data = audio_data.astype(np.float32)
+                if audio_data.max() > 1.0:
+                    audio_data = audio_data / 32768.0  # Normalize 16-bit audio
+                
+                logger.info(f"Audio data type: {audio_data.dtype}")
+                logger.info(f"Audio data min/max: {np.min(audio_data)}/{np.max(audio_data)}")
+                
+                # Try transcribing with the loaded audio data
+                try:
+                    result = model.transcribe(audio_data)
+                    logger.info("Transcription completed")
+                except Exception as transcribe_error:
+                    logger.error(f"Error during transcription: {transcribe_error}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Error during transcription: {str(transcribe_error)}"
+                    )
+                
+            except Exception as sf_error:
+                logger.error(f"Error reading WAV file with soundfile: {sf_error}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Invalid WAV file: {str(sf_error)}"
+                )
+            
+            transcribed_text = result["text"].strip()
+            logger.info(f"Transcribed text: {transcribed_text}")
+            
+            if not transcribed_text:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Could not transcribe audio - no speech detected"
+                )
+                
+            # Process transcribed text with Gemini
+            logger.info("Processing with Gemini...")
+            chat_response = await process_chat_message(transcribed_text, db)
+            
+            response_data = {
+                "success": True,
+                "transcription": transcribed_text,
+                "chat_response": chat_response["reply"]
+            }
+            
+            # Clean up files only after successful processing
+            try:
+                if audio_path and os.path.exists(audio_path):
+                    os.remove(audio_path)
+                    logger.info(f"Cleaned up input file: {audio_path}")
+                if wav_path and os.path.exists(wav_path):
+                    os.remove(wav_path)
+                    logger.info(f"Cleaned up output file: {wav_path}")
+            except Exception as e:
+                logger.warning(f"Error cleaning up temporary files: {str(e)}")
+            
+            return response_data
+            
+        except Exception as e:
+            logger.error(f"Whisper error: {str(e)}")
+            logger.error(f"Whisper error type: {type(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error during transcription: {str(e)}"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error in transcribe_audio_gemini: {str(e)}")
+        # Clean up files in case of error
+        try:
+            if audio_path and os.path.exists(audio_path):
+                os.remove(audio_path)
+                logger.info(f"Cleaned up input file after error: {audio_path}")
+            if wav_path and os.path.exists(wav_path):
+                os.remove(wav_path)
+                logger.info(f"Cleaned up output file after error: {wav_path}")
+        except Exception as cleanup_error:
+            logger.warning(f"Error cleaning up temporary files after error: {cleanup_error}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat")
+async def chat_endpoint(message: Message, db: Session = Depends(get_db)):
+    return await process_chat_message(message.text, db)
+
+@app.get("/todos")
+async def get_todos(db: Session = Depends(get_db)):
+    todos = db.query(Todo).all()
+    return [{"id": todo.id, "title": todo.title, "due_date": todo.due_date} for todo in todos]
+
+if __name__ == "__main__":
+    logger.info("Starting server...")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

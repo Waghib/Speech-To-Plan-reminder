@@ -1,43 +1,83 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Speech to Plan Reminder</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <title>Voice Todo Assistant</title>
     <style>
         body {
             width: 400px;
+            height: 500px;
+            margin: 0;
             padding: 20px;
             font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
         }
 
-        #dropZone {
-            border: 2px dashed #4CAF50;
-            border-radius: 8px;
-            padding: 20px;
-            text-align: center;
-            margin-bottom: 15px;
-            cursor: pointer;
-            transition: all 0.3s ease;
+        .chat-container {
+            height: 400px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             display: flex;
             flex-direction: column;
+        }
+
+        .chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+
+        .user-message {
+            margin-left: auto;
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 15px 15px 0 15px;
+        }
+
+        .bot-message {
+            margin-right: auto;
+            background-color: #e9ecef;
+            color: black;
+            padding: 10px 15px;
+            border-radius: 15px 15px 15px 0;
+        }
+
+        .chat-controls {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #eee;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .mic-button {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: none;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            display: flex;
             align-items: center;
             justify-content: center;
+            transition: background-color 0.3s;
         }
 
-        #dropZone.recording {
-            background-color: #ffebee;
-            border-color: #f44336;
+        .mic-button:hover {
+            background-color: #45a049;
         }
 
-        #micIcon {
-            color: #4CAF50;
-            font-size: 48px;
-            margin-bottom: 15px;
-            transition: all 0.3s ease;
-        }
-
-        #dropZone.recording #micIcon {
-            color: #f44336;
+        .mic-button.recording {
+            background-color: #f44336;
             animation: pulse 1.5s infinite;
         }
 
@@ -47,101 +87,269 @@
             100% { transform: scale(1); }
         }
 
-        #recordingStatus {
-            font-size: 14px;
+        .mic-icon {
+            width: 24px;
+            height: 24px;
+        }
+
+        .status-text {
+            flex-grow: 1;
+            text-align: center;
             color: #666;
-            margin-top: 5px;
         }
 
-        #transcribeButton {
-            width: 100%;
-            padding: 12px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background-color 0.3s ease;
-        }
-
-        #transcribeButton:disabled {
-            background-color: #cccccc;
-            cursor: not-allowed;
-        }
-
-        #transcribeButton:hover:not(:disabled) {
-            background-color: #45a049;
-        }
-
-        #status {
-            margin: 10px 0;
-            color: #666;
-            font-style: italic;
-        }
-
-        #output {
-            margin-top: 15px;
+        #error-message {
+            color: #f44336;
+            margin-top: 10px;
+            text-align: center;
             padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            min-height: 100px;
-            max-height: 300px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-
-        .progress-container {
-            margin: 10px 0;
+            background-color: #ffebee;
+            border-radius: 5px;
             display: none;
         }
 
-        .progress-bar {
-            width: 100%;
-            height: 4px;
-            background-color: #f0f0f0;
-            border-radius: 2px;
-            overflow: hidden;
+        #debug-info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+            display: none !important;  /* Force hide debug info */
         }
 
-        .progress-bar-inner {
-            width: 0%;
-            height: 100%;
-            background-color: #4CAF50;
-            transition: width 0.5s ease;
-            animation: progress-animation 2s infinite;
+        .todo-list {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: none;  /* Hide the todo list */
         }
 
-        @keyframes progress-animation {
-            0% { width: 0%; }
-            50% { width: 70%; }
-            100% { width: 100%; }
+        .todo-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #eee;
         }
 
-        .error {
-            color: #f44336;
+        .todo-item:last-child {
+            border-bottom: none;
         }
 
-        .success {
-            color: #4CAF50;
+        .todo-title {
+            flex-grow: 1;
+        }
+
+        .todo-date {
+            color: #666;
+            font-size: 0.9em;
+            margin-left: 10px;
         }
     </style>
 </head>
 <body>
-    <div id="dropZone">
-        <i id="micIcon" class="fas fa-microphone"></i>
-        <div id="recordingText">Click to Start Recording</div>
-        <div id="recordingStatus"></div>
-    </div>
-    <div class="progress-container" id="progressContainer">
-        <div class="progress-bar">
-            <div class="progress-bar-inner"></div>
+    <div class="chat-container">
+        <div class="chat-messages" id="chat-messages">
+            <div class="message bot-message">
+                Hi! I'm your todo assistant. Click the microphone and speak to add or check your todos.
+            </div>
+        </div>
+        <div class="chat-controls">
+            <button id="recordButton" class="mic-button">
+                <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+            </button>
+            <div class="status-text" id="status">Click microphone to start speaking</div>
         </div>
     </div>
-    <button id="transcribeButton" disabled>Transcribe Audio</button>
-    <div id="status"></div>
-    <div id="output"></div>
-    <script src="popup.js"></script>
+    <div id="error-message"></div>
+    <div id="debug-info"></div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+
+        const recordButton = document.getElementById('recordButton');
+        const statusText = document.getElementById('status');
+        const chatMessages = document.getElementById('chat-messages');
+        const errorMessage = document.getElementById('error-message');
+        const debugInfo = document.getElementById('debug-info');
+
+        function showError(message) {
+            errorMessage.style.display = 'block';
+            errorMessage.textContent = message;
+            console.error(message);
+        }
+
+        function showDebug(message) {
+            debugInfo.style.display = 'block';
+            debugInfo.textContent += message + '\n';
+            console.log(message);
+        }
+
+        function addMessage(text, isUser = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            messageDiv.textContent = text;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        async function startRecording() {
+            try {
+                showDebug('Requesting microphone access...');
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        sampleRate: 16000, // Better for speech recognition
+                        channelCount: 1    // Mono audio
+                    }
+                });
+                
+                showDebug('Microphone access granted');
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'audio/webm;codecs=opus'
+                });
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                        showDebug(`Received audio chunk: ${event.data.size} bytes`);
+                    }
+                };
+
+                mediaRecorder.onstop = async () => {
+                    showDebug('Recording stopped, processing audio...');
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    showDebug(`Audio blob created: ${audioBlob.size} bytes`);
+                    
+                    // Stop all tracks in the stream
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    await sendAudioToServer(audioBlob);
+                };
+
+                mediaRecorder.start(100);
+                isRecording = true;
+                recordButton.classList.add('recording');
+                statusText.textContent = 'Recording... Click to stop';
+                errorMessage.style.display = 'none';
+                showDebug('Recording started');
+            } catch (error) {
+                showError(`Error accessing microphone: ${error.message}`);
+                console.error('Detailed error:', error);
+                statusText.textContent = 'Error accessing microphone';
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                showDebug('Stopping recording...');
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                isRecording = false;
+                recordButton.classList.remove('recording');
+                statusText.textContent = 'Processing...';
+            }
+        }
+
+        async function sendAudioToServer(audioBlob) {
+            try {
+                showDebug('Preparing to send audio to server...');
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.webm');
+
+                showDebug('Sending audio to server...');
+                const response = await fetch('http://localhost:8000/transcribe_gemini', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Server error: ${response.status} - ${errorText}`);
+                }
+
+                showDebug('Received response from server');
+                const data = await response.json();
+                
+                if (data.transcription) {
+                    addMessage(data.transcription, true);
+                    showDebug(`Transcription: ${data.transcription}`);
+                }
+                
+                if (data.chat_response) {
+                    addMessage(data.chat_response);
+                    showDebug(`Bot response: ${data.chat_response}`);
+                    await refreshTodoList();
+                }
+                
+                statusText.textContent = 'Click microphone to start speaking';
+            } catch (error) {
+                showError(`Error processing audio: ${error.message}`);
+                statusText.textContent = 'Error occurred. Try again.';
+                console.error('Full error:', error);
+            }
+        }
+
+        async function refreshTodoList() {
+            try {
+                const response = await fetch('http://localhost:8000/todos');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch todos');
+                }
+                const todos = await response.json();
+                
+                // Create or update todo list display
+                let todoListDiv = document.getElementById('todo-list');
+                if (!todoListDiv) {
+                    todoListDiv = document.createElement('div');
+                    todoListDiv.id = 'todo-list';
+                    todoListDiv.className = 'todo-list';
+                    document.body.appendChild(todoListDiv);
+                }
+                
+                todoListDiv.innerHTML = '<h3>Your Todos:</h3>';
+                todos.forEach(todo => {
+                    const todoItem = document.createElement('div');
+                    todoItem.className = 'todo-item';
+                    todoItem.innerHTML = `
+                        <span class="todo-title">${todo.title}</span>
+                        ${todo.due_date ? `<span class="todo-date">${new Date(todo.due_date).toLocaleDateString()}</span>` : ''}
+                    `;
+                    todoListDiv.appendChild(todoItem);
+                });
+            } catch (error) {
+                showError(`Error fetching todos: ${error.message}`);
+            }
+        }
+
+        recordButton.addEventListener('click', () => {
+            if (!isRecording) {
+                startRecording();
+            } else {
+                stopRecording();
+            }
+        });
+
+        // Request microphone permission when the page loads
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                stream.getTracks().forEach(track => track.stop());
+                showDebug('Initial microphone permission granted');
+                errorMessage.style.display = 'none';
+            })
+            .catch(error => {
+                showError(`Please allow microphone access to use this app: ${error.message}`);
+            });
+
+        // Initial todo list load
+        refreshTodoList();
+    </script>
 </body>
 </html>

@@ -34,9 +34,15 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception as e:
+        db.close()
+        raise e
     finally:
         db.close()
 
 # Function to create tables
 def create_tables():
     Base.metadata.create_all(bind=engine)
+
+# Create tables when the module is imported
+create_tables()

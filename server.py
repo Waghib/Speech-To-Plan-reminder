@@ -100,22 +100,25 @@ chat = gemini_model.start_chat(history=[
 ])
 
 # Create FastAPI app
-app = FastAPI(title="Audio Transcription API")
+app = FastAPI()
 
-# Add CORS middleware
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount static files
-current_dir = os.path.dirname(os.path.abspath(__file__))
-static_dir = os.path.join(current_dir, "static")
-os.makedirs(static_dir, exist_ok=True)
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
+# Mount static files from extension directory
+extension_dir = os.path.join(os.path.dirname(__file__), "extension")
+app.mount("/static", StaticFiles(directory=extension_dir), name="static")
+
+@app.get("/")
+async def root():
+    """Serve the main popup.html from extension directory"""
+    return FileResponse(os.path.join(extension_dir, "popup.html"))
 
 class AudioData(BaseModel):
     audio: str
@@ -416,21 +419,6 @@ async def process_chat_message(message: str, db: Session) -> dict:
         logger.error(f"Error processing chat message: {str(e)}")
         return {"reply": "I encountered an error while processing your request. Could you please try again or rephrase your request?"}
 
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    try:
-        html_path = os.path.join(current_dir, "popup.html")
-        if not os.path.exists(html_path):
-            logger.error(f"HTML file not found at: {html_path}")
-            raise HTTPException(status_code=404, detail="HTML file not found")
-            
-        with open(html_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        return HTMLResponse(content=content)
-    except Exception as e:
-        logger.error(f"Error serving HTML: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/transcribe", response_model=TranscriptionResponse)
 async def transcribe_audio(audio_data: AudioData) -> TranscriptionResponse:
     """Transcribe audio data."""
@@ -495,7 +483,10 @@ async def transcribe_audio(audio_data: AudioData) -> TranscriptionResponse:
 
             except Exception as e:
                 logger.error(f"Error during transcription: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Transcription error: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Transcription error: {str(e)}"
+                )
 
         finally:
             # Delete the temporary audio file

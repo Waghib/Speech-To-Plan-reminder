@@ -57,3 +57,8 @@ ENV/
 
 # Docker volumes
 postgres_data/
+
+# client secret
+client_secret_7820419231-09jjarcsdkp3vprgfkhu1emerf0haiqt.apps.googleusercontent.com.json
+client_secret.json
+token.pickle

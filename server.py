@@ -24,6 +24,7 @@ import shutil
 import time
 import asyncio
 import aiofiles
+from calendar_service import create_calendar_event
 
 load_dotenv()
 
@@ -281,139 +282,105 @@ def get_db():
     finally:
         db.close()
 
-async def process_chat_message(message: str, db: Session) -> dict:
+async def process_chat_message(message: str, db: Session):
     try:
         # Send message to Gemini
         logger.info(f"Sending message to Gemini: {message}")
         response = chat.send_message(message)
-        logger.info(f"Raw Gemini response: {response.text}")
-        
-        # If the message is about viewing todos, handle it directly
-        if any(word in message.lower() for word in ['show', 'display', 'list', 'what', 'todo', 'task', 'tomorrow']):
-            # Get all todos
-            todos = db.query(Todo).all()
-            
-            # Filter for tomorrow if requested
-            if 'tomorrow' in message.lower():
-                tomorrow = datetime.now().date() + timedelta(days=1)
-                todos = [todo for todo in todos if todo.due_date and todo.due_date.date() == tomorrow]
-                prefix = "Here are your todos for tomorrow"
-            else:
-                prefix = "Here are all your todos"
-            
-            # Format the response in a more readable way
-            if todos:
-                todo_list = "\n".join([
-                    f"- {todo.title} (Due: {todo.due_date.strftime('%Y-%m-%d') if todo.due_date else 'No due date'})"
-                    for todo in todos
-                ])
-                return {"reply": f"{prefix}:\n{todo_list}"}
-            else:
-                return {"reply": "You don't have any todos" + (" for tomorrow" if 'tomorrow' in message.lower() else " yet")}
+        response_text = response.text
+        logger.info(f"Raw Gemini response: {response_text}")
         
         try:
-            action = json.loads(response.text)
-            logger.info(f"Parsed action from Gemini: {action}")
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini response as JSON: {response.text}")
-            return {"reply": "I apologize, but I couldn't understand how to process that. Could you please try:\n1. Using simpler phrases\n2. Breaking down your request\n3. Speaking more clearly"}
-        
-        if action["type"] == "output":
-            return {"reply": action["output"]}
-
-        if action["type"] == "action":
-            observation = None
+            response_json = json.loads(response_text)
             
-            if action["function"] == "getAllTodos":
-                todos = db.query(Todo).all()
-                observation = [{"id": todo.id, "title": todo.title, "due_date": todo.due_date.isoformat() if todo.due_date else None} for todo in todos]
+            # If it's a direct output response, return it immediately
+            if response_json["type"] == "output":
+                return {"reply": response_json["output"]}
+            
+            # Handle action responses
+            if response_json["type"] == "action":
+                observation = None
                 
-                if todos:
-                    todo_list = "\n".join([
-                        f"- {todo.title} (Due: {todo.due_date.strftime('%Y-%m-%d') if todo.due_date else 'No due date'})"
-                        for todo in todos
-                    ])
-                    return {"reply": f"Here are all your todos:\n{todo_list}"}
-                else:
-                    return {"reply": "You don't have any todos yet"}
-
-            elif action["function"] == "createTodo":
-                try:
-                    input_data = action["input"]
-                    due_date = None
+                if response_json["function"] == "createTodo":
+                    input_data = response_json["input"]
+                    title = input_data.get("title", "")
+                    due_date = input_data.get("due_date")
                     
-                    if input_data.get("due_date"):
+                    # Create todo in database
+                    todo = Todo(todo=title)
+                    if due_date:
+                        todo.due_date = datetime.strptime(due_date, "%Y-%m-%d")
+                    
+                    db.add(todo)
+                    db.commit()
+                    db.refresh(todo)
+                    
+                    # Add event to Google Calendar if due date is provided
+                    if due_date:
                         try:
-                            due_date = datetime.fromisoformat(input_data["due_date"])
-                            # Validate the date is not too far in the past or future
-                            today = datetime.now()
-                            if due_date.year < today.year - 1 or due_date.year > today.year + 10:
-                                logger.warning(f"Invalid date range: {due_date}")
-                                return {"reply": "I noticed an issue with the date. Could you please specify a date within a reasonable range?"}
-                        except ValueError as e:
-                            logger.error(f"Date parsing error: {str(e)}")
-                            return {"reply": "I had trouble understanding the date format. Could you please specify the date more clearly?"}
+                            calendar_event_id = create_calendar_event(title, due_date)
+                            if calendar_event_id:
+                                todo.calendar_event_id = calendar_event_id
+                                db.commit()
+                                return {"reply": f"Added '{title}' to your todo list and created a calendar event for {due_date}"}
+                        except Exception as e:
+                            logger.error(f"Error creating calendar event: {str(e)}")
+                            return {"reply": f"Added '{title}' to your todo list, but failed to create calendar event: {str(e)}"}
                     
-                    new_todo = Todo(
-                        title=input_data["title"],
-                        due_date=due_date
-                    )
-                    db.add(new_todo)
-                    db.commit()
-                    db.refresh(new_todo)
-                    observation = {"id": new_todo.id}
-                    
-                except KeyError as e:
-                    logger.error(f"Missing required field in createTodo: {str(e)}")
-                    return {"reply": "I couldn't create the todo because some required information was missing. Please make sure to specify what you want to do."}
-
-            elif action["function"] == "searchTodo":
-                search_term = action["input"]["title"]
-                todos = db.query(Todo).filter(
-                    Todo.title.ilike(f"%{search_term}%")
-                ).all()
+                    return {"reply": f"Added '{title}' to your todo list"}
                 
-                if todos:
-                    # First, let's delete the matching todo
-                    for todo in todos:
-                        db.delete(todo)
-                    db.commit()
-                    deleted_titles = [todo.title for todo in todos]
-                    return {"reply": f"Deleted the following todos:\n" + "\n".join([f"- {title}" for title in deleted_titles])}
-                else:
-                    return {"reply": f"I couldn't find any todos matching '{search_term}'"}
-
-            elif action["function"] == "deleteTodoById":
-                todo_id = action["input"]
-                if isinstance(todo_id, list):
-                    # Handle bulk deletion
-                    success_count = 0
-                    for tid in todo_id:
-                        todo = db.query(Todo).filter(Todo.id == tid).first()
+                elif response_json["function"] == "getAllTodos":
+                    todos = db.query(Todo).all()
+                    if todos:
+                        todo_list = "\n".join([
+                            f"- {todo.todo} (Due: {todo.due_date.strftime('%Y-%m-%d') if todo.due_date else 'No due date'})"
+                            for todo in todos
+                        ])
+                        return {"reply": f"Here are all your todos:\n{todo_list}"}
+                    else:
+                        return {"reply": "You don't have any todos yet"}
+                
+                elif response_json["function"] == "searchTodo":
+                    search_term = response_json["input"]["title"]
+                    todos = db.query(Todo).filter(
+                        Todo.todo.ilike(f"%{search_term}%")
+                    ).all()
+                    
+                    if todos:
+                        # First, let's delete the matching todo
+                        for todo in todos:
+                            db.delete(todo)
+                        db.commit()
+                        deleted_titles = [todo.todo for todo in todos]
+                        return {"reply": f"Deleted the following todos:\n" + "\n".join([f"- {title}" for title in deleted_titles])}
+                    else:
+                        return {"reply": f"I couldn't find any todos matching '{search_term}'"}
+                
+                elif response_json["function"] == "deleteTodoById":
+                    todo_id = response_json["input"]
+                    if isinstance(todo_id, list):
+                        # Handle bulk deletion
+                        success_count = 0
+                        for tid in todo_id:
+                            todo = db.query(Todo).filter(Todo.id == tid).first()
+                            if todo:
+                                db.delete(todo)
+                                success_count += 1
+                        db.commit()
+                        return {"reply": f"Successfully deleted {success_count} todos"}
+                    else:
+                        # Handle single deletion
+                        todo = db.query(Todo).filter(Todo.id == todo_id).first()
                         if todo:
                             db.delete(todo)
-                            success_count += 1
-                    db.commit()
-                    observation = {"deleted_count": success_count}
-                else:
-                    # Handle single deletion
-                    todo = db.query(Todo).filter(Todo.id == todo_id).first()
-                    if todo:
-                        db.delete(todo)
-                        db.commit()
-                        observation = True
-                    else:
-                        observation = False
+                            db.commit()
+                            return {"reply": f"Successfully deleted todo"}
+                        else:
+                            return {"reply": "Could not find the todo to delete"}
 
-            try:
-                # Send observation back to AI
-                logger.info(f"Sending observation to Gemini: {observation}")
-                follow_up = chat.send_message(json.dumps({"observation": observation}))
-                follow_up_action = json.loads(follow_up.text)
-                return {"reply": follow_up_action["output"]}
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse Gemini follow-up response: {follow_up.text}")
-                return {"reply": "I've made the changes you requested, but I'm having trouble formulating a response. The action was completed successfully."}
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini response as JSON: {response_text}")
+            return {"reply": "I apologize, but I couldn't understand how to process that. Could you please try:\n1. Using simpler phrases\n2. Breaking down your request\n3. Speaking more clearly"}
 
     except Exception as e:
         logger.error(f"Error processing chat message: {str(e)}")
@@ -676,7 +643,7 @@ async def chat_endpoint(message: Message, db: Session = Depends(get_db)):
 @app.get("/todos")
 async def get_todos(db: Session = Depends(get_db)):
     todos = db.query(Todo).all()
-    return [{"id": todo.id, "title": todo.title, "due_date": todo.due_date} for todo in todos]
+    return [{"id": todo.id, "title": todo.todo, "due_date": todo.due_date.isoformat() if todo.due_date else None} for todo in todos]
 
 if __name__ == "__main__":
     logger.info("Starting server...")

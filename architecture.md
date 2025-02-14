@@ -1,39 +1,52 @@
-flowchart TB
-    subgraph BE[Browser Extension]
+```mermaid
+graph TB
+    subgraph Browser Extension
         E[Chrome Extension]
         P[Popup Interface]
     end
 
-    subgraph BS[Backend Server]
+    subgraph Backend Server
         API[FastAPI Server]
         W[Whisper Model]
         G[Gemini AI]
         
-        subgraph DB[Database]
-            PG[(PostgreSQL)]
+        subgraph Database
+            DB[(PostgreSQL)]
             TM[Todo Model]
         end
         
-        subgraph SV[Services]
+        subgraph Services
             CS[Calendar Service]
             AS[Audio Service]
         end
     end
 
-    subgraph EX[External Services]
+    subgraph External Services
         GC[Google Calendar API]
         GM[Google Gemini API]
     end
 
-    E --> API
-    P --> E
-    API --> W
-    API --> G
-    API --> PG
-    G --> GM
-    CS --> GC
-    API --> CS
-    API --> AS
+    E --> |Sends Audio| API
+    P --> |User Interface| E
+    
+    API --> |Transcription| W
+    API --> |Text Processing| G
+    API --> |Store/Retrieve| DB
+    
+    G --> |Uses| GM
+    CS --> |Create Events| GC
+    
+    API --> |Calendar Operations| CS
+    API --> |Audio Processing| AS
+    
+    classDef server fill:#f9f,stroke:#333,stroke-width:2px
+    classDef external fill:#bbf,stroke:#333,stroke-width:2px
+    classDef database fill:#bfb,stroke:#333,stroke-width:2px
+    
+    class API,W,G server
+    class GC,GM external
+    class DB database
+```
 
 # Architecture Overview
 
@@ -79,22 +92,3 @@ flowchart TB
 - Calendar integration
 - Asynchronous audio processing
 - Secure API authentication
-
-To save this diagram as an image, you have a few options:
-
-1. Use Mermaid Live Editor:
-   - Visit https://mermaid.live
-   - Copy and paste this diagram code
-   - Click the "Download SVG" or "Download PNG" button
-
-2. Use VS Code:
-   - Install the "Markdown Preview Mermaid Support" extension
-   - Open this file
-   - Right-click on the preview
-   - Select "Save as Image"
-
-3. Use the Mermaid CLI:
-   ```bash
-   npm install -g @mermaid-js/mermaid-cli
-   mmdc -i architecture.md -o architecture.png
-   

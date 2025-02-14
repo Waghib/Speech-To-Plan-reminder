@@ -282,7 +282,7 @@ def get_db():
     finally:
         db.close()
 
-async def process_chat_message(message: str, db: Session) -> dict:
+async def process_chat_message(message: str, db: Session):
     try:
         # Send message to Gemini
         logger.info(f"Sending message to Gemini: {message}")
@@ -293,7 +293,14 @@ async def process_chat_message(message: str, db: Session) -> dict:
         try:
             response_json = json.loads(response_text)
             
+            # If it's a direct output response, return it immediately
+            if response_json["type"] == "output":
+                return {"reply": response_json["output"]}
+            
+            # Handle action responses
             if response_json["type"] == "action":
+                observation = None
+                
                 if response_json["function"] == "createTodo":
                     input_data = response_json["input"]
                     title = input_data.get("title", "")
@@ -322,23 +329,21 @@ async def process_chat_message(message: str, db: Session) -> dict:
                     
                     return {"reply": f"Added '{title}' to your todo list"}
                 
-                if response_json["function"] == "getAllTodos":
+                elif response_json["function"] == "getAllTodos":
                     todos = db.query(Todo).all()
-                    observation = [{"id": todo.id, "title": todo.title, "due_date": todo.due_date.isoformat() if todo.due_date else None} for todo in todos]
-                    
                     if todos:
                         todo_list = "\n".join([
-                            f"- {todo.title} (Due: {todo.due_date.strftime('%Y-%m-%d') if todo.due_date else 'No due date'})"
+                            f"- {todo.todo} (Due: {todo.due_date.strftime('%Y-%m-%d') if todo.due_date else 'No due date'})"
                             for todo in todos
                         ])
                         return {"reply": f"Here are all your todos:\n{todo_list}"}
                     else:
                         return {"reply": "You don't have any todos yet"}
-
+                
                 elif response_json["function"] == "searchTodo":
                     search_term = response_json["input"]["title"]
                     todos = db.query(Todo).filter(
-                        Todo.title.ilike(f"%{search_term}%")
+                        Todo.todo.ilike(f"%{search_term}%")
                     ).all()
                     
                     if todos:
@@ -346,11 +351,11 @@ async def process_chat_message(message: str, db: Session) -> dict:
                         for todo in todos:
                             db.delete(todo)
                         db.commit()
-                        deleted_titles = [todo.title for todo in todos]
+                        deleted_titles = [todo.todo for todo in todos]
                         return {"reply": f"Deleted the following todos:\n" + "\n".join([f"- {title}" for title in deleted_titles])}
                     else:
                         return {"reply": f"I couldn't find any todos matching '{search_term}'"}
-
+                
                 elif response_json["function"] == "deleteTodoById":
                     todo_id = response_json["input"]
                     if isinstance(todo_id, list):
@@ -362,33 +367,20 @@ async def process_chat_message(message: str, db: Session) -> dict:
                                 db.delete(todo)
                                 success_count += 1
                         db.commit()
-                        observation = {"deleted_count": success_count}
+                        return {"reply": f"Successfully deleted {success_count} todos"}
                     else:
                         # Handle single deletion
                         todo = db.query(Todo).filter(Todo.id == todo_id).first()
                         if todo:
                             db.delete(todo)
                             db.commit()
-                            observation = True
+                            return {"reply": f"Successfully deleted todo"}
                         else:
-                            observation = False
-
-            try:
-                # Send observation back to AI
-                logger.info(f"Sending observation to Gemini: {observation}")
-                follow_up = chat.send_message(json.dumps({"observation": observation}))
-                follow_up_action = json.loads(follow_up.text)
-                return {"reply": follow_up_action["output"]}
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse Gemini follow-up response: {follow_up.text}")
-                return {"reply": "I've made the changes you requested, but I'm having trouble formulating a response. The action was completed successfully."}
+                            return {"reply": "Could not find the todo to delete"}
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Gemini response as JSON: {response_text}")
             return {"reply": "I apologize, but I couldn't understand how to process that. Could you please try:\n1. Using simpler phrases\n2. Breaking down your request\n3. Speaking more clearly"}
-
-        if response_json["type"] == "output":
-            return {"reply": response_json["output"]}
 
     except Exception as e:
         logger.error(f"Error processing chat message: {str(e)}")

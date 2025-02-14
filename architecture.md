@@ -1,65 +1,47 @@
 graph TB
-    %% Styling
-    classDef default fill:#2D323E,stroke:#AAB7C4,stroke-width:2px,color:#FFFFFF
-    classDef extension fill:#4A90E2,stroke:#2171B5,stroke-width:2px,color:#FFFFFF
-    classDef server fill:#9B59B6,stroke:#8E44AD,stroke-width:2px,color:#FFFFFF
-    classDef database fill:#27AE60,stroke:#219A52,stroke-width:2px,color:#FFFFFF
-    classDef external fill:#E74C3C,stroke:#C0392B,stroke-width:2px,color:#FFFFFF
-
-    %% Browser Extension
-    subgraph "Browser Extension" ["Browser Extension"]
-        style "Browser Extension" fill:#2D323E,stroke:#AAB7C4,color:#FFFFFF
-        E["Chrome Extension"]
-        P["Popup Interface"]
+    subgraph Browser["Browser Extension"]
+        E[Chrome Extension]
+        P[Popup Interface]
     end
 
-    %% Backend Server
-    subgraph "Backend Server" ["Backend Server"]
-        style "Backend Server" fill:#2D323E,stroke:#AAB7C4,color:#FFFFFF
-        API["FastAPI Server"]
-        W["Whisper Model"]
-        G["Gemini AI"]
+    subgraph Backend["Backend Server"]
+        API[FastAPI Server]
+        W[Whisper Model]
+        G[Gemini AI]
         
-        subgraph "Database" ["Database"]
-            style "Database" fill:#2D323E,stroke:#AAB7C4,color:#FFFFFF
-            DB[("PostgreSQL")]
-            TM["Todo Model"]
+        subgraph DB["Database"]
+            PostgreSQL[(PostgreSQL)]
+            TM[Todo Model]
         end
         
-        subgraph "Services" ["Services"]
-            style "Services" fill:#2D323E,stroke:#AAB7C4,color:#FFFFFF
-            CS["Calendar Service"]
-            AS["Audio Service"]
+        subgraph Services["Services"]
+            CS[Calendar Service]
+            AS[Audio Service]
         end
     end
 
-    %% External Services
-    subgraph "External Services" ["External Services"]
-        style "External Services" fill:#2D323E,stroke:#AAB7C4,color:#FFFFFF
-        GC["Google Calendar API"]
-        GM["Google Gemini API"]
+    subgraph External["External Services"]
+        GC[Google Calendar API]
+        GM[Google Gemini API]
     end
 
-    %% Connections
-    E --> |"Sends Audio"| API
-    P --> |"User Interface"| E
+    E --> |Sends Audio| API
+    P --> |User Interface| E
     
-    API --> |"Transcription"| W
-    API --> |"Text Processing"| G
-    API --> |"Store/Retrieve"| DB
+    API --> |Transcription| W
+    API --> |Text Processing| G
+    API --> |Store/Retrieve| PostgreSQL
     
-    G --> |"Uses"| GM
-    CS --> |"Create Events"| GC
+    G --> |Uses| GM
+    CS --> |Create Events| GC
     
-    API --> |"Calendar Operations"| CS
-    API --> |"Audio Processing"| AS
-    
-    %% Apply styles
-    class E,P extension
-    class API,W,G,CS,AS server
-    class DB,TM database
-    class GC,GM external
-```
+    API --> |Calendar Operations| CS
+    API --> |Audio Processing| AS
+
+    style Browser fill:#f9f,stroke:#333,stroke-width:2px
+    style Backend fill:#bbf,stroke:#333,stroke-width:2px
+    style DB fill:#bfb,stroke:#333,stroke-width:2px
+    style External fill:#fbb,stroke:#333,stroke-width:2px
 
 # Architecture Overview
 

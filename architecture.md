@@ -1,47 +1,39 @@
-graph TB
-    subgraph Browser["Browser Extension"]
+flowchart TB
+    subgraph BE[Browser Extension]
         E[Chrome Extension]
         P[Popup Interface]
     end
 
-    subgraph Backend["Backend Server"]
+    subgraph BS[Backend Server]
         API[FastAPI Server]
         W[Whisper Model]
         G[Gemini AI]
         
-        subgraph DB["Database"]
-            PostgreSQL[(PostgreSQL)]
+        subgraph DB[Database]
+            PG[(PostgreSQL)]
             TM[Todo Model]
         end
         
-        subgraph Services["Services"]
+        subgraph SV[Services]
             CS[Calendar Service]
             AS[Audio Service]
         end
     end
 
-    subgraph External["External Services"]
+    subgraph EX[External Services]
         GC[Google Calendar API]
         GM[Google Gemini API]
     end
 
-    E --> |Sends Audio| API
-    P --> |User Interface| E
-    
-    API --> |Transcription| W
-    API --> |Text Processing| G
-    API --> |Store/Retrieve| PostgreSQL
-    
-    G --> |Uses| GM
-    CS --> |Create Events| GC
-    
-    API --> |Calendar Operations| CS
-    API --> |Audio Processing| AS
-
-    style Browser fill:#f9f,stroke:#333,stroke-width:2px
-    style Backend fill:#bbf,stroke:#333,stroke-width:2px
-    style DB fill:#bfb,stroke:#333,stroke-width:2px
-    style External fill:#fbb,stroke:#333,stroke-width:2px
+    E --> API
+    P --> E
+    API --> W
+    API --> G
+    API --> PG
+    G --> GM
+    CS --> GC
+    API --> CS
+    API --> AS
 
 # Architecture Overview
 

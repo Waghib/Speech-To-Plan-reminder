@@ -1,51 +1,64 @@
-```mermaid
 graph TB
-    subgraph Browser Extension
-        E[Chrome Extension]
-        P[Popup Interface]
+    %% Styling
+    classDef default fill:#2D323E,stroke:#AAB7C4,stroke-width:2px,color:#FFFFFF
+    classDef extension fill:#4A90E2,stroke:#2171B5,stroke-width:2px,color:#FFFFFF
+    classDef server fill:#9B59B6,stroke:#8E44AD,stroke-width:2px,color:#FFFFFF
+    classDef database fill:#27AE60,stroke:#219A52,stroke-width:2px,color:#FFFFFF
+    classDef external fill:#E74C3C,stroke:#C0392B,stroke-width:2px,color:#FFFFFF
+
+    %% Browser Extension
+    subgraph "Browser Extension" ["Browser Extension"]
+        style "Browser Extension" fill:#2D323E,stroke:#AAB7C4,color:#FFFFFF
+        E["Chrome Extension"]
+        P["Popup Interface"]
     end
 
-    subgraph Backend Server
-        API[FastAPI Server]
-        W[Whisper Model]
-        G[Gemini AI]
+    %% Backend Server
+    subgraph "Backend Server" ["Backend Server"]
+        style "Backend Server" fill:#2D323E,stroke:#AAB7C4,color:#FFFFFF
+        API["FastAPI Server"]
+        W["Whisper Model"]
+        G["Gemini AI"]
         
-        subgraph Database
-            DB[(PostgreSQL)]
-            TM[Todo Model]
+        subgraph "Database" ["Database"]
+            style "Database" fill:#2D323E,stroke:#AAB7C4,color:#FFFFFF
+            DB[("PostgreSQL")]
+            TM["Todo Model"]
         end
         
-        subgraph Services
-            CS[Calendar Service]
-            AS[Audio Service]
+        subgraph "Services" ["Services"]
+            style "Services" fill:#2D323E,stroke:#AAB7C4,color:#FFFFFF
+            CS["Calendar Service"]
+            AS["Audio Service"]
         end
     end
 
-    subgraph External Services
-        GC[Google Calendar API]
-        GM[Google Gemini API]
+    %% External Services
+    subgraph "External Services" ["External Services"]
+        style "External Services" fill:#2D323E,stroke:#AAB7C4,color:#FFFFFF
+        GC["Google Calendar API"]
+        GM["Google Gemini API"]
     end
 
-    E --> |Sends Audio| API
-    P --> |User Interface| E
+    %% Connections
+    E --> |"Sends Audio"| API
+    P --> |"User Interface"| E
     
-    API --> |Transcription| W
-    API --> |Text Processing| G
-    API --> |Store/Retrieve| DB
+    API --> |"Transcription"| W
+    API --> |"Text Processing"| G
+    API --> |"Store/Retrieve"| DB
     
-    G --> |Uses| GM
-    CS --> |Create Events| GC
+    G --> |"Uses"| GM
+    CS --> |"Create Events"| GC
     
-    API --> |Calendar Operations| CS
-    API --> |Audio Processing| AS
+    API --> |"Calendar Operations"| CS
+    API --> |"Audio Processing"| AS
     
-    classDef server fill:#f9f,stroke:#333,stroke-width:2px
-    classDef external fill:#bbf,stroke:#333,stroke-width:2px
-    classDef database fill:#bfb,stroke:#333,stroke-width:2px
-    
-    class API,W,G server
+    %% Apply styles
+    class E,P extension
+    class API,W,G,CS,AS server
+    class DB,TM database
     class GC,GM external
-    class DB database
 ```
 
 # Architecture Overview
@@ -92,3 +105,22 @@ graph TB
 - Calendar integration
 - Asynchronous audio processing
 - Secure API authentication
+
+To save this diagram as an image, you have a few options:
+
+1. Use Mermaid Live Editor:
+   - Visit https://mermaid.live
+   - Copy and paste this diagram code
+   - Click the "Download SVG" or "Download PNG" button
+
+2. Use VS Code:
+   - Install the "Markdown Preview Mermaid Support" extension
+   - Open this file
+   - Right-click on the preview
+   - Select "Save as Image"
+
+3. Use the Mermaid CLI:
+   ```bash
+   npm install -g @mermaid-js/mermaid-cli
+   mmdc -i architecture.md -o architecture.png
+   

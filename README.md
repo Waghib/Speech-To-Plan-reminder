@@ -2,6 +2,12 @@
 
 Transform your spoken words into organized plans and reminders effortlessly with this powerful Chrome extension! Speech-To-Plan Reminder is an innovative browser extension that leverages cutting-edge speech recognition and AI technology to convert voice inputs into structured task reminders and plans. With seamless Google Calendar integration, your tasks are not only recorded but automatically synced to your calendar, ensuring you never miss an important deadline or appointment.
 
+## 🔄 Project Flow
+
+![Project Flow Diagram](project-flow.png)
+
+The diagram above illustrates the complete flow of the Speech-To-Plan Reminder system, showing how voice input is processed through various components to create organized tasks and calendar events.
+
 ## 🌟 Key Features
 
 - **Voice-to-Text Conversion**: Advanced speech recognition using OpenAI Whisper

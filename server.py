@@ -16,7 +16,7 @@ import uvicorn
 import google.generativeai as genai
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from database import SessionLocal, Todo
+from database import SessionLocal, Todo, Base
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 import base64
@@ -25,6 +25,8 @@ import time
 import asyncio
 import aiofiles
 from calendar_service import create_calendar_event
+from sqladmin import Admin, ModelView
+from database import engine, Todo
 
 load_dotenv()
 
@@ -102,6 +104,23 @@ chat = gemini_model.start_chat(history=[
 
 # Create FastAPI app
 app = FastAPI()
+
+# Create SQLAdmin
+class TodoAdmin(ModelView, model=Todo):
+    column_list = [Todo.id, Todo.todo, Todo.due_date, Todo.created_at, Todo.updated_at, Todo.calendar_event_id]
+    column_searchable_list = [Todo.todo]
+    column_sortable_list = [Todo.id, Todo.created_at, Todo.due_date]
+    column_default_sort = ("created_at", True)
+    can_create = True
+    can_edit = True
+    can_delete = True
+    can_view_details = True
+    name = "Todo"
+    icon = "fa-solid fa-list-check"
+
+# Initialize Admin
+admin = Admin(app, engine)
+admin.add_view(TodoAdmin)
 
 # Configure CORS
 app.add_middleware(

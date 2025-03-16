@@ -48,8 +48,10 @@ model = whisper.load_model("base")
 model.to(DEVICE)
 
 # Configure Gemini
-genai.configure(api_key=os.getenv("gemini_api_key"))
-gemini_model = genai.GenerativeModel('gemini-pro')
+api_key = os.getenv("GOOGLE_API_KEY")
+logger.info(f"Using Gemini API key: {api_key[:5]}...{api_key[-5:] if api_key else 'None'}")
+genai.configure(api_key=api_key)
+gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 SYSTEM_PROMPT = """You are an AI To-Do List Assistant. Your role is to help users manage their tasks by adding, viewing, updating, and deleting them.
 You MUST ALWAYS respond in JSON format with the following structure:
@@ -309,97 +311,105 @@ async def process_chat_message(message: str, db: Session):
         response_text = response.text
         logger.info(f"Raw Gemini response: {response_text}")
         
-        try:
-            response_json = json.loads(response_text)
+        # Simple approach: Just extract the JSON part from the markdown code block
+        if "```json" in response_text and "```" in response_text:
+            # Get the content between ```json and the last ```
+            json_text = response_text.split("```json")[1].split("```")[0].strip()
+            logger.info(f"Extracted JSON text: {json_text}")
             
-            # If it's a direct output response, return it immediately
-            if response_json["type"] == "output":
-                return {"reply": response_json["output"]}
-            
-            # Handle action responses
-            if response_json["type"] == "action":
-                observation = None
+            try:
+                response_json = json.loads(json_text)
                 
-                if response_json["function"] == "createTodo":
-                    input_data = response_json["input"]
-                    title = input_data.get("title", "")
-                    due_date = input_data.get("due_date")
-                    
-                    # Create todo in database
-                    todo = Todo(todo=title)
-                    if due_date:
-                        todo.due_date = datetime.strptime(due_date, "%Y-%m-%d")
-                    
-                    db.add(todo)
-                    db.commit()
-                    db.refresh(todo)
-                    
-                    # Add event to Google Calendar if due date is provided
-                    if due_date:
-                        try:
-                            calendar_event_id = create_calendar_event(title, due_date)
-                            if calendar_event_id:
-                                todo.calendar_event_id = calendar_event_id
-                                db.commit()
-                                return {"reply": f"Added '{title}' to your todo list and created a calendar event for {due_date}"}
-                        except Exception as e:
-                            logger.error(f"Error creating calendar event: {str(e)}")
-                            return {"reply": f"Added '{title}' to your todo list, but failed to create calendar event: {str(e)}"}
-                    
-                    return {"reply": f"Added '{title}' to your todo list"}
+                # If it's a direct output response, return it immediately
+                if "type" in response_json and response_json["type"] == "output":
+                    return {"reply": response_json["output"]}
                 
-                elif response_json["function"] == "getAllTodos":
-                    todos = db.query(Todo).all()
-                    if todos:
-                        todo_list = "\n".join([
-                            f"- {todo.todo} (Due: {todo.due_date.strftime('%Y-%m-%d') if todo.due_date else 'No due date'})"
-                            for todo in todos
-                        ])
-                        return {"reply": f"Here are all your todos:\n{todo_list}"}
-                    else:
-                        return {"reply": "You don't have any todos yet"}
-                
-                elif response_json["function"] == "searchTodo":
-                    search_term = response_json["input"]["title"]
-                    todos = db.query(Todo).filter(
-                        Todo.todo.ilike(f"%{search_term}%")
-                    ).all()
+                # Handle action responses
+                if "type" in response_json and response_json["type"] == "action":
+                    observation = None
                     
-                    if todos:
-                        # First, let's delete the matching todo
-                        for todo in todos:
-                            db.delete(todo)
+                    if response_json["function"] == "createTodo":
+                        input_data = response_json["input"]
+                        title = input_data.get("title", "")
+                        due_date = input_data.get("due_date")
+                        
+                        # Create todo in database
+                        todo = Todo(todo=title)
+                        if due_date:
+                            todo.due_date = datetime.strptime(due_date, "%Y-%m-%d")
+                        
+                        db.add(todo)
                         db.commit()
-                        deleted_titles = [todo.todo for todo in todos]
-                        return {"reply": f"Deleted the following todos:\n" + "\n".join([f"- {title}" for title in deleted_titles])}
-                    else:
-                        return {"reply": f"I couldn't find any todos matching '{search_term}'"}
-                
-                elif response_json["function"] == "deleteTodoById":
-                    todo_id = response_json["input"]
-                    if isinstance(todo_id, list):
-                        # Handle bulk deletion
-                        success_count = 0
-                        for tid in todo_id:
-                            todo = db.query(Todo).filter(Todo.id == tid).first()
+                        db.refresh(todo)
+                        
+                        # Add event to Google Calendar if due date is provided
+                        if due_date:
+                            try:
+                                calendar_event_id = create_calendar_event(title, due_date)
+                                if calendar_event_id:
+                                    todo.calendar_event_id = calendar_event_id
+                                    db.commit()
+                                    return {"reply": f"Added '{title}' to your todo list and created a calendar event for {due_date}"}
+                            except Exception as e:
+                                logger.error(f"Error creating calendar event: {str(e)}")
+                                return {"reply": f"Added '{title}' to your todo list, but failed to create calendar event: {str(e)}"}
+                        
+                        return {"reply": f"Added '{title}' to your todo list"}
+                    
+                    elif response_json["function"] == "getAllTodos":
+                        todos = db.query(Todo).all()
+                        if todos:
+                            todo_list = "\n".join([
+                                f"- {todo.todo} (Due: {todo.due_date.strftime('%Y-%m-%d') if todo.due_date else 'No due date'})"
+                                for todo in todos
+                            ])
+                            return {"reply": f"Here are all your todos:\n{todo_list}"}
+                        else:
+                            return {"reply": "You don't have any todos yet"}
+                    
+                    elif response_json["function"] == "searchTodo":
+                        search_term = response_json["input"]["title"]
+                        todos = db.query(Todo).filter(
+                            Todo.todo.ilike(f"%{search_term}%")
+                        ).all()
+                        
+                        if todos:
+                            # First, let's delete the matching todo
+                            for todo in todos:
+                                db.delete(todo)
+                            db.commit()
+                            deleted_titles = [todo.todo for todo in todos]
+                            return {"reply": f"Deleted the following todos:\n" + "\n".join([f"- {title}" for title in deleted_titles])}
+                        else:
+                            return {"reply": f"I couldn't find any todos matching '{search_term}'"}
+                    
+                    elif response_json["function"] == "deleteTodoById":
+                        todo_id = response_json["input"]
+                        if isinstance(todo_id, list):
+                            # Handle bulk deletion
+                            success_count = 0
+                            for tid in todo_id:
+                                todo = db.query(Todo).filter(Todo.id == tid).first()
+                                if todo:
+                                    db.delete(todo)
+                                    success_count += 1
+                            db.commit()
+                            return {"reply": f"Successfully deleted {success_count} todos"}
+                        else:
+                            # Handle single deletion
+                            todo = db.query(Todo).filter(Todo.id == todo_id).first()
                             if todo:
                                 db.delete(todo)
-                                success_count += 1
-                        db.commit()
-                        return {"reply": f"Successfully deleted {success_count} todos"}
-                    else:
-                        # Handle single deletion
-                        todo = db.query(Todo).filter(Todo.id == todo_id).first()
-                        if todo:
-                            db.delete(todo)
-                            db.commit()
-                            return {"reply": f"Successfully deleted todo"}
-                        else:
-                            return {"reply": "Could not find the todo to delete"}
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini response as JSON: {response_text}")
-            return {"reply": "I apologize, but I couldn't understand how to process that. Could you please try:\n1. Using simpler phrases\n2. Breaking down your request\n3. Speaking more clearly"}
+                                db.commit()
+                                return {"reply": f"Successfully deleted todo"}
+                            else:
+                                return {"reply": "Could not find the todo to delete"}
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse Gemini response as JSON: {response_text}")
+                return {"reply": "I apologize, but I couldn't understand how to process that. Could you please try:\n1. Using simpler phrases\n2. Breaking down your request\n3. Speaking more clearly"}
+        
+        # If we get here, we couldn't extract JSON from the response
+        return {"reply": "I apologize, but I couldn't understand how to process that. Could you please try again with a clearer request?"}
 
     except Exception as e:
         logger.error(f"Error processing chat message: {str(e)}")

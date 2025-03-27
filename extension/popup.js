@@ -1,5 +1,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     const micButton = document.getElementById('micButton');
+    const textInput = document.getElementById('textInput');
+    const sendButton = document.getElementById('sendButton');
     const status = document.getElementById('status');
     const chatMessages = document.getElementById('chat-messages');
     const todoList = document.getElementById('todoList');
@@ -11,7 +13,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateMicButtonState(recording) {
         isRecording = recording;
         micButton.classList.toggle('recording', recording);
-        status.textContent = recording ? 'Recording... Click to stop' : 'Click microphone to start speaking';
+        status.textContent = recording ? 'Recording...' : 'Type or speak';
     }
 
     async function startRecording() {
@@ -40,7 +42,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     await processAudio(audioBlob);
                 } catch (error) {
                     console.error('Error processing audio:', error);
-                    status.textContent = 'Error occurred. Try again.';
+                    status.textContent = 'Error. Try again';
                     updateMicButtonState(false);
                 }
             });
@@ -50,7 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         } catch (error) {
             console.error('Microphone access error:', error);
-            status.textContent = 'Could not access microphone. Check permissions.';
+            status.textContent = 'Mic access denied';
             updateMicButtonState(false);
         }
     }
@@ -68,7 +70,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const formData = new FormData();
             formData.append('audio', audioBlob, 'recording.webm');
             
-            status.textContent = 'Processing audio...';
+            status.textContent = 'Processing...';
             const response = await fetch('http://localhost:8000/transcribe_gemini', {
                 method: 'POST',
                 body: formData
@@ -99,12 +101,64 @@ document.addEventListener('DOMContentLoaded', function() {
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }
             
-            status.textContent = 'Click microphone to start speaking';
+            status.textContent = 'Type or speak';
             await refreshTodoList();
 
         } catch (error) {
             console.error('Error:', error);
-            status.textContent = 'Error occurred. Try again.';
+            status.textContent = 'Error. Try again';
+        }
+    }
+
+    async function sendTextMessage(text) {
+        if (!text.trim()) return;
+        
+        try {
+            // Add the text as a user message
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message user-message';
+            messageDiv.textContent = text;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            status.textContent = 'Processing...';
+            
+            // Send the text to the server
+            const response = await fetch('http://localhost:8000/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text: text })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || `Server error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            
+            // Add the bot's response
+            const botDiv = document.createElement('div');
+            botDiv.className = 'message bot-message';
+            botDiv.textContent = data.response;
+            chatMessages.appendChild(botDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            status.textContent = 'Type or speak';
+            await refreshTodoList();
+            
+        } catch (error) {
+            console.error('Error:', error);
+            status.textContent = 'Error. Try again';
+            
+            // Add error message as bot message
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'message bot-message';
+            errorDiv.textContent = 'Sorry, there was an error processing your message. Please try again.';
+            chatMessages.appendChild(errorDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
         }
     }
 
@@ -166,6 +220,31 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     } else {
         console.error('Microphone button not found');
+    }
+
+    // Handle text input submission
+    if (sendButton && textInput) {
+        // Send on button click
+        sendButton.addEventListener('click', () => {
+            const text = textInput.value;
+            if (text.trim()) {
+                sendTextMessage(text);
+                textInput.value = ''; // Clear input after sending
+            }
+        });
+        
+        // Send on Enter key press
+        textInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                const text = textInput.value;
+                if (text.trim()) {
+                    sendTextMessage(text);
+                    textInput.value = ''; // Clear input after sending
+                }
+            }
+        });
+    } else {
+        console.error('Text input or send button not found');
     }
 
     // Load initial todo list

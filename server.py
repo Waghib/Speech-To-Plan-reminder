@@ -665,9 +665,108 @@ async def transcribe_audio_gemini(
             logger.warning(f"Error cleaning up temporary files after error: {cleanup_error}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/chat")
+@app.post("/chat", response_model=dict)
 async def chat_endpoint(message: Message, db: Session = Depends(get_db)):
-    return await process_chat_message(message.text, db)
+    """Handle text-based chat messages from the frontend."""
+    try:
+        # Process the message using the chat function
+        result = await process_chat_message(message.text, db)
+        
+        # Return the response
+        return {"response": result["reply"]}
+    except Exception as e:
+        logger.error(f"Error in chat endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing message: {str(e)}")
+
+@app.post("/transcribe", response_model=TranscriptionResponse)
+async def transcribe_audio(audio_data: AudioData) -> TranscriptionResponse:
+    """Transcribe audio data."""
+    audio_path = None
+    try:
+        if not audio_data.audio:
+            raise HTTPException(status_code=400, detail="No audio data received")
+
+        audio_path = save_audio_file(audio_data.audio)
+        if not audio_path:
+            raise HTTPException(status_code=500, detail="Failed to save audio file")
+
+        try:
+            file_size = os.path.getsize(audio_path)
+            logger.info(f"Processing file: {audio_path} (Size: {file_size} bytes)")
+
+            logger.info("Loading audio file...")
+            audio = load_audio(audio_path)
+            if audio is None:
+                raise HTTPException(status_code=500, detail="Failed to load audio file or audio is silent")
+
+            if len(audio) == 0:
+                raise HTTPException(status_code=400, detail="Audio file is empty")
+
+            if not np.isfinite(audio).all():
+                raise HTTPException(status_code=400, detail="Audio contains invalid values")
+
+            # Process audio based on its length
+            duration = len(audio) / 16000  # Calculate duration in seconds
+            logger.info(f"Audio duration: {duration:.1f} seconds")
+
+            try:
+                if duration > 30:  # For files longer than 30 seconds
+                    logger.info("Long audio detected, processing in chunks...")
+                    transcription = process_audio_in_chunks(audio)
+                else:
+                    # Convert to torch tensor for short files
+                    audio_tensor = torch.from_numpy(audio).to(DEVICE)
+                    result = model.transcribe(
+                        audio_tensor,
+                        fp16=False,
+                        language='en'
+                    )
+                    transcription = result["text"].strip()
+
+                logger.info(f"Transcription result: '{transcription}'")
+
+                if not transcription:
+                    return TranscriptionResponse(
+                        success=True,
+                        transcription="No speech detected in the audio."
+                    )
+
+                # Process transcribed text with Gemini
+                chat_response = await process_chat_message(transcription, db=get_db())
+                
+                return TranscriptionResponse(
+                    success=True,
+                    transcription=transcription,
+                    chat_response=chat_response["reply"]
+                )
+
+            except Exception as e:
+                logger.error(f"Error during transcription: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Transcription error: {str(e)}"
+                )
+
+        finally:
+            # Delete the temporary audio file
+            if audio_path and os.path.exists(audio_path):
+                try:
+                    os.remove(audio_path)
+                    logger.info(f"Deleted temporary audio file: {audio_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete temporary file {audio_path}: {e}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Server error: {str(e)}", exc_info=True)
+        if audio_path and os.path.exists(audio_path):
+            try:
+                os.remove(audio_path)
+                logger.info(f"Deleted temporary audio file: {audio_path}")
+            except Exception as e:
+                logger.warning(f"Failed to delete temporary file {audio_path}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/todos")
 async def get_todos(db: Session = Depends(get_db)):

@@ -6,6 +6,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatMessages = document.getElementById('chat-messages');
     const todoList = document.getElementById('todoList');
 
+    console.log("DOM loaded, elements:", {
+        micButton: !!micButton,
+        textInput: !!textInput,
+        sendButton: !!sendButton,
+        status: !!status,
+        chatMessages: !!chatMessages,
+        todoList: !!todoList
+    });
+
     let mediaRecorder = null;
     let audioChunks = [];
     let isRecording = false;
@@ -164,33 +173,88 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function refreshTodoList() {
         try {
+            console.log("Refreshing todo list...");
             const response = await fetch('http://localhost:8000/todos');
             if (!response.ok) {
                 throw new Error(`Server error: ${response.status}`);
             }
 
             const todos = await response.json();
+            console.log("Todos received:", todos);
+            
+            // Make sure todoList element exists
+            if (!todoList) {
+                console.error("Todo list element not found!");
+                return;
+            }
+            
             todoList.innerHTML = ''; // Clear existing todos
 
-            // todos.forEach(todo => {
-            //     const todoItem = document.createElement('div');
-            //     todoItem.className = `todo-item${todo.completed ? ' completed' : ''}`;
+            if (!Array.isArray(todos) || todos.length === 0) {
+                console.log("No todos found or invalid response format");
+                const emptyMessage = document.createElement('div');
+                emptyMessage.className = 'empty-todo-message';
+                emptyMessage.textContent = 'No tasks found. Add some tasks to get started!';
+                todoList.appendChild(emptyMessage);
+                return;
+            }
+
+            console.log(`Found ${todos.length} todos to display`);
+            todos.forEach(todo => {
+                console.log("Processing todo:", todo);
+                const todoItem = document.createElement('div');
+                todoItem.className = 'todo-item';
                 
-            //     const checkbox = document.createElement('input');
-            //     checkbox.type = 'checkbox';
-            //     checkbox.checked = todo.completed;
-            //     checkbox.addEventListener('change', () => toggleTodo(todo.id));
+                const todoText = document.createElement('span');
+                todoText.className = 'todo-text';
+                todoText.textContent = todo.todo;
 
-            //     const todoText = document.createElement('span');
-            //     todoText.textContent = todo.text;
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-btn';
+                deleteBtn.innerHTML = '&times;';
+                deleteBtn.addEventListener('click', () => deleteTodo(todo.id));
 
-            //     todoItem.appendChild(checkbox);
-            //     todoItem.appendChild(todoText);
-            //     todoList.appendChild(todoItem);
-            // });
+                // Add due date if available
+                if (todo.due_date) {
+                    const dueDate = new Date(todo.due_date);
+                    const dueDateElem = document.createElement('span');
+                    dueDateElem.className = 'due-date';
+                    dueDateElem.textContent = `Due: ${dueDate.toLocaleDateString()}`;
+                    todoItem.appendChild(dueDateElem);
+                }
+
+                todoItem.appendChild(todoText);
+                todoItem.appendChild(deleteBtn);
+                todoList.appendChild(todoItem);
+            });
+            console.log("Todo list refreshed successfully");
 
         } catch (error) {
             console.error('Error loading todos:', error);
+        }
+    }
+
+    async function deleteTodo(todoId) {
+        try {
+            const response = await fetch(`http://localhost:8000/todos/${todoId}`, {
+                method: 'DELETE'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status}`);
+            }
+            
+            await refreshTodoList();
+            
+            // Add a system message
+            const systemMsg = document.createElement('div');
+            systemMsg.className = 'message bot-message';
+            systemMsg.textContent = 'Task deleted successfully!';
+            chatMessages.appendChild(systemMsg);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+        } catch (error) {
+            console.error('Error deleting todo:', error);
         }
     }
 

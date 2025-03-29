@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 pydantic
+pydantic-settings
 python-multipart
 openai-whisper==20231117
 soundfile==0.12.1
@@ -9,3 +10,8 @@ torch==2.1.1
 psycopg2-binary>=2.9.9
 SQLAlchemy>=2.0.23
 python-dotenv>=1.0.0
+google-generativeai>=0.3.0
+sqladmin>=0.10.0
+google-auth>=2.16.0
+google-auth-oauthlib>=1.0.0
+google-api-python-client>=2.70.0

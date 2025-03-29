@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
 from app.config import settings
-from app.services.todo_service import get_all_todos, create_todo, delete_todo_by_id, search_todos
+from app.services.todo_service import get_all_todos, create_todo, delete_todo_by_id, search_todos, delete_todo_by_name
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -202,6 +202,28 @@ def process_chat_message(message: str, db: Session) -> str:
         Response message
     """
     try:
+        # Check for direct task deletion commands
+        if any(phrase in message.lower() for phrase in ["delete", "remove", "cancel"]):
+            # Extract task name to delete
+            task_name = message.lower()
+            
+            # Handle different prefixes
+            if task_name.startswith("delete"):
+                task_name = task_name[6:].strip()
+            elif task_name.startswith("remove"):
+                task_name = task_name[6:].strip()
+            elif task_name.startswith("cancel"):
+                task_name = task_name[6:].strip()
+            
+            # Delete the task directly
+            logger.info(f"Attempting to delete task by name: '{task_name}'")
+            success, count = delete_todo_by_name(db, task_name)
+            
+            if success:
+                return f"Deleted {count} task(s) matching '{task_name}'."
+            else:
+                return f"No tasks found matching '{task_name}'."
+        
         # Check for direct task creation commands
         if any(phrase in message.lower() for phrase in ["i have a", "i have", "add a", "add", "create a", "create", "schedule a", "schedule", "remind me"]):
             # Extract task details

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from datetime import datetime
 import logging
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Tuple
 
 from app.models.todo import Todo
 from calendar_service import create_calendar_event
@@ -117,3 +117,36 @@ def search_todos(db: Session, query: str) -> List[Todo]:
             Todo.todo.ilike(search_term)
         )
     ).all()
+
+def delete_todo_by_name(db: Session, task_name: str) -> Tuple[bool, int]:
+    """
+    Delete a todo by name.
+    
+    Args:
+        db: Database session
+        task_name: Name of the task to delete
+        
+    Returns:
+        Tuple of (success, count) where success is True if any tasks were deleted,
+        and count is the number of tasks deleted
+    """
+    try:
+        # Find todos matching the name
+        search_term = f"%{task_name}%"
+        todos = db.query(Todo).filter(Todo.todo.ilike(search_term)).all()
+        
+        if not todos:
+            return False, 0
+        
+        # Delete all matching todos
+        count = 0
+        for todo in todos:
+            db.delete(todo)
+            count += 1
+        
+        db.commit()
+        return True, count
+    except Exception as e:
+        logger.error(f"Error deleting todo by name: {str(e)}")
+        db.rollback()
+        return False, 0

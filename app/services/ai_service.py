@@ -228,6 +228,7 @@ def process_chat_message(message: str, db: Session) -> str:
         if any(phrase in message.lower() for phrase in ["i have a", "i have", "add a", "add", "create a", "create", "schedule a", "schedule", "remind me"]):
             # Extract task details
             due_date = None
+            task_title = None  # Initialize task_title to avoid reference errors
             date_indicators = {
                 "tomorrow": 1,
                 "next week": 7,
@@ -267,38 +268,96 @@ def process_chat_message(message: str, db: Session) -> str:
                     task_title = task_title[2:].strip()
                 elif task_title.startswith("about"):
                     task_title = task_title[5:].strip()
-            
-            # Remove date indicators from the task title to get the core task
-            core_task_title = task_title
-            for indicator in date_indicators.keys():
-                if indicator in core_task_title.lower():
-                    # Handle different positions of date indicators
-                    parts = re.split(r'\b' + re.escape(indicator) + r'\b', core_task_title.lower(), flags=re.IGNORECASE)
-                    if len(parts) > 1:
-                        # Join all parts except the indicator
-                        core_task_title = " ".join([p.strip() for p in parts if p.strip()])
-            
-            # Clean up any extra spaces
-            core_task_title = re.sub(r'\s+', ' ', core_task_title).strip()
-            
-            # Capitalize the first letter of the task
-            if core_task_title:
-                task_title = core_task_title[0].upper() + core_task_title[1:] if len(core_task_title) > 1 else core_task_title.upper()
             else:
-                task_title = "Task"  # Fallback if we couldn't extract a title
+                # For more complex sentences, try to extract a meaningful task
+                # Look for keywords that might indicate a task
+                keywords = ["meeting", "appointment", "call", "task", "event", "reminder", "office"]
+                
+                # Find the first keyword in the message
+                found_keyword = None
+                keyword_index = -1
+                
+                for keyword in keywords:
+                    if keyword in message.lower():
+                        found_keyword = keyword
+                        # Find the index of the keyword
+                        words = message.split()
+                        for i, word in enumerate(words):
+                            if keyword in word.lower():
+                                keyword_index = i
+                                break
+                        break
+                
+                if found_keyword:
+                    if found_keyword == "meeting":
+                        task_title = "Meeting"
+                        # Check if there's context about the meeting
+                        if "office" in message.lower():
+                            task_title = "Office meeting"
+                    elif found_keyword == "office":
+                        task_title = "Go to office"
+                    else:
+                        # Extract a window around the keyword
+                        words = message.split()
+                        
+                        if keyword_index >= 0:
+                            # Take up to 2 words before and 2 words after the keyword
+                            start = max(0, keyword_index - 2)
+                            end = min(len(words), keyword_index + 3)
+                            task_title = " ".join(words[start:end])
+                else:
+                    # If no keyword found, use a more sophisticated approach
+                    # Try to extract a noun phrase that might represent a task
+                    words = message.split()
+                    if len(words) > 3:
+                        # Take the middle part of the sentence
+                        middle_start = len(words) // 3
+                        middle_end = 2 * len(words) // 3
+                        task_title = " ".join(words[middle_start:middle_end])
+                    else:
+                        # If the sentence is short, use the whole message
+                        task_title = message
             
-            # Check for duplicate tasks before creating
-            is_duplicate = check_duplicate_task(db, task_title, due_date)
+            # If we still don't have a task title, use a default
+            if not task_title:
+                task_title = "Reminder"
             
-            if is_duplicate:
-                logger.info(f"Duplicate task detected: '{task_title}', due: {due_date}")
-                return f"You already have '{task_title}' in your tasks."
-            
-            # Create the task directly
-            logger.info(f"Creating task directly: '{task_title}', due: {due_date}")
-            todo = create_todo(db, task_title, due_date)
-            logger.info(f"Created task directly: {task_title}, due: {due_date}, id: {todo.id}")
-            return f"I'll add '{task_title}' to your tasks."
+            try:
+                # Remove date indicators from the task title to get the core task
+                core_task_title = task_title
+                for indicator in date_indicators.keys():
+                    if indicator in core_task_title.lower():
+                        # Handle different positions of date indicators
+                        parts = re.split(r'\b' + re.escape(indicator) + r'\b', core_task_title.lower(), flags=re.IGNORECASE)
+                        if len(parts) > 1:
+                            # Join all parts except the indicator
+                            core_task_title = " ".join([p.strip() for p in parts if p.strip()])
+                
+                # Clean up any extra spaces
+                core_task_title = re.sub(r'\s+', ' ', core_task_title).strip()
+                
+                # Capitalize the first letter of the task
+                if core_task_title:
+                    task_title = core_task_title[0].upper() + core_task_title[1:] if len(core_task_title) > 1 else core_task_title.upper()
+                else:
+                    task_title = "Task"  # Fallback if we couldn't extract a title
+                
+                # Check for duplicate tasks before creating
+                is_duplicate = check_duplicate_task(db, task_title, due_date)
+                
+                if is_duplicate:
+                    logger.info(f"Duplicate task detected: '{task_title}', due: {due_date}")
+                    return f"You already have '{task_title}' in your tasks."
+                
+                # Create the task directly
+                logger.info(f"Creating task directly: '{task_title}', due: {due_date}")
+                todo = create_todo(db, task_title, due_date)
+                logger.info(f"Created task directly: {task_title}, due: {due_date}, id: {todo.id}")
+                return f"I'll add '{task_title}' to your tasks."
+            except Exception as e:
+                logger.error(f"Error processing task creation: {str(e)}")
+                # Try to use Gemini for more complex sentences
+                return process_with_gemini(message, db)
         
         # Send message to Gemini
         response = chat.send_message(message)
@@ -402,4 +461,29 @@ def process_chat_message(message: str, db: Session) -> str:
     
     except Exception as e:
         logger.error(f"Error processing chat message: {str(e)}")
+        return f"Sorry, I encountered an error: {str(e)}"
+
+def process_with_gemini(message: str, db: Session) -> str:
+    """
+    Process a chat message using Gemini.
+    
+    Args:
+        message: User message
+        db: Database session
+        
+    Returns:
+        Response message
+    """
+    try:
+        # Send message to Gemini
+        response = chat.send_message(message)
+        response_text = response.text
+        
+        # Clean and parse the response
+        cleaned_response = clean_json_response(response_text)
+        
+        return cleaned_response
+    
+    except Exception as e:
+        logger.error(f"Error processing chat message with Gemini: {str(e)}")
         return f"Sorry, I encountered an error: {str(e)}"

@@ -44,13 +44,31 @@ def create_todo(db: Session, title: str, due_date: Optional[str] = None) -> Todo
     if due_date:
         try:
             # Parse due date
-            parsed_due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+            logger.info(f"Processing due date: {due_date}")
+            
+            # Handle different date formats
+            if 'T' in due_date:
+                # ISO format with time
+                parsed_due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+            else:
+                # Just date (YYYY-MM-DD)
+                parsed_due_date = datetime.strptime(due_date, "%Y-%m-%d")
+            
+            logger.info(f"Parsed due date: {parsed_due_date}")
+            
+            # Format date for calendar event (YYYY-MM-DD)
+            calendar_date = parsed_due_date.strftime("%Y-%m-%d")
             
             # Create calendar event
-            calendar_event_id = create_calendar_event(title, due_date.split('T')[0])
-            logger.info(f"Created calendar event with ID: {calendar_event_id}")
+            calendar_event_id = create_calendar_event(title, calendar_date)
+            
+            if calendar_event_id:
+                logger.info(f"Created calendar event with ID: {calendar_event_id}")
+            else:
+                logger.warning("Failed to create calendar event, but will continue with task creation")
         except Exception as e:
-            logger.error(f"Error creating calendar event: {str(e)}")
+            logger.error(f"Error processing due date: {str(e)}")
+            # Continue with task creation even if calendar event creation fails
     
     # Create todo
     todo = Todo(
@@ -133,14 +151,30 @@ def check_duplicate_task(db: Session, title: str, due_date: Optional[str] = None
     # Normalize the title for comparison (case insensitive)
     normalized_title = title.lower().strip()
     
-    # Get all todos with similar titles
-    # Extract the core task name without date indicators
+    # Extract the core task name without date indicators and common phrases
     core_title = normalized_title
-    for date_indicator in ["tomorrow", "today", "next week", "next month"]:
+    date_indicators = ["tomorrow", "today", "next week", "next month", "on monday", "on tuesday", 
+                      "on wednesday", "on thursday", "on friday", "on saturday", "on sunday"]
+    common_phrases = ["i have", "i need to", "remind me to", "i want to", "i should", "i must"]
+    
+    # Remove date indicators
+    for date_indicator in date_indicators:
         core_title = core_title.replace(date_indicator, "").strip()
     
-    search_term = f"%{core_title}%"
-    todos = db.query(Todo).filter(Todo.todo.ilike(search_term)).all()
+    # Remove common phrases
+    for phrase in common_phrases:
+        if core_title.startswith(phrase):
+            core_title = core_title[len(phrase):].strip()
+    
+    # Further normalize by removing articles and prepositions at the beginning
+    for word in ["a ", "an ", "the ", "to ", "for ", "at ", "in ", "on "]:
+        if core_title.startswith(word):
+            core_title = core_title[len(word):].strip()
+    
+    logger.info(f"Checking for duplicate task. Original: '{title}', Normalized: '{core_title}'")
+    
+    # Get all todos
+    todos = db.query(Todo).all()
     
     # If due_date is provided, parse it
     parsed_due_date = None
@@ -150,29 +184,55 @@ def check_duplicate_task(db: Session, title: str, due_date: Optional[str] = None
         except Exception as e:
             logger.error(f"Error parsing due date: {str(e)}")
     
-    # Check each todo for exact match
+    # Check each todo for similarity
     for todo in todos:
         # Normalize todo title
         todo_title = todo.todo.lower().strip()
-        # Extract core todo title without date indicators
+        
+        # Extract core todo title without date indicators and common phrases
         core_todo_title = todo_title
-        for date_indicator in ["tomorrow", "today", "next week", "next month"]:
+        
+        # Remove date indicators
+        for date_indicator in date_indicators:
             core_todo_title = core_todo_title.replace(date_indicator, "").strip()
         
-        # Compare core titles (case insensitive)
-        if core_todo_title == core_title:
-            # If no due date is specified, consider it a duplicate
+        # Remove common phrases
+        for phrase in common_phrases:
+            if core_todo_title.startswith(phrase):
+                core_todo_title = core_todo_title[len(phrase):].strip()
+        
+        # Further normalize by removing articles and prepositions at the beginning
+        for word in ["a ", "an ", "the ", "to ", "for ", "at ", "in ", "on "]:
+            if core_todo_title.startswith(word):
+                core_todo_title = core_todo_title[len(word):].strip()
+        
+        logger.info(f"Comparing with existing task. Original: '{todo.todo}', Normalized: '{core_todo_title}'")
+        
+        # Compare normalized titles
+        # Use a more flexible matching approach - check if one is contained in the other
+        # or if they're very similar (e.g., "meeting" and "meeting with team")
+        if (core_todo_title in core_title or core_title in core_todo_title or
+            core_todo_title.split()[0] == core_title.split()[0]):  # Compare first words
+            
+            logger.info(f"Potential duplicate found: '{todo.todo}' vs '{title}'")
+            
+            # If no due date is specified for either task, consider it a duplicate
             if not due_date or not todo.due_date:
+                logger.info(f"Duplicate confirmed (no due date): '{todo.todo}' vs '{title}'")
                 return True
+                
             # If due dates match, it's a duplicate
             elif todo.due_date and parsed_due_date and todo.due_date.date() == parsed_due_date:
+                logger.info(f"Duplicate confirmed (matching due dates): '{todo.todo}' vs '{title}'")
                 return True
+                
             # If the existing task has no due date but we're adding one, consider it a duplicate
-            # and we'll update the existing task with the due date
+            # and update the existing task with the due date
             elif not todo.due_date and parsed_due_date:
                 # Update the existing task with the due date
                 todo.due_date = parsed_due_date
                 db.commit()
+                logger.info(f"Updated existing task with due date: '{todo.todo}' -> {parsed_due_date}")
                 return True
     
     return False

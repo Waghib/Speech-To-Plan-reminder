@@ -54,7 +54,23 @@ def get_calendar_service():
 
 def create_calendar_event(title: str, due_date: str):
     try:
+        # Check if credentials file exists
+        if not os.path.exists(CREDENTIALS_PATH):
+            logger.error(f"Credentials file not found at {CREDENTIALS_PATH}")
+            return None
+            
         service = get_calendar_service()
+        
+        # Ensure due_date is in the correct format (YYYY-MM-DD)
+        if not due_date or not isinstance(due_date, str):
+            logger.error(f"Invalid due_date format: {due_date}")
+            return None
+            
+        # Format the date if it contains time information
+        if 'T' in due_date:
+            due_date = due_date.split('T')[0]
+            
+        logger.info(f"Creating calendar event: Title='{title}', Date='{due_date}'")
         
         # Create the event
         event = {
@@ -81,4 +97,5 @@ def create_calendar_event(title: str, due_date: str):
         return event['id']
     except Exception as e:
         logger.error(f"Error creating calendar event: {str(e)}")
-        raise Exception(f"Failed to create calendar event: {str(e)}")
+        # Return None instead of raising an exception to prevent task creation failure
+        return None

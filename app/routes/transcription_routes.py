@@ -11,9 +11,9 @@ import os
 import json
 
 from app.models.todo import get_db
-from app.services.audio_service import process_audio_file, save_audio_file
-from app.services.ai_service import transcribe_with_whisper, transcribe_with_gemini, process_chat_message
-from app.config import settings
+from app.services.audio_service import process_audio_file, save_audio_file, transcribe_audio
+from app.services.ai_service import process_chat_message
+from app.config import EXTENSION_DIR
 
 router = APIRouter(tags=["transcription"])
 
@@ -35,7 +35,7 @@ class Message(BaseModel):
 @router.get("/")
 async def root():
     """Serve the main popup.html from extension directory."""
-    return FileResponse(os.path.join(settings.EXTENSION_DIR, "popup.html"))
+    return FileResponse(os.path.join(EXTENSION_DIR, "popup.html"))
 
 @router.post("/transcribe", response_model=TranscriptionResponse)
 async def transcribe_audio_endpoint(audio_data: AudioData):
@@ -52,7 +52,7 @@ async def transcribe_audio_endpoint(audio_data: AudioData):
             raise HTTPException(status_code=400, detail="Failed to process audio file")
         
         # Transcribe audio
-        transcription = transcribe_with_whisper(audio)
+        transcription = transcribe_audio(audio)
         
         return TranscriptionResponse(
             success=True,
@@ -82,10 +82,10 @@ async def transcribe_audio_gemini_endpoint(
             raise HTTPException(status_code=400, detail="Failed to process audio file")
         
         # Transcribe audio
-        transcription = transcribe_with_whisper(processed_audio)
+        transcription = transcribe_audio(processed_audio)
         
         # Process transcription as chat message
-        chat_response = process_chat_message(transcription, db)
+        chat_response = await process_chat_message(transcription, db)
         
         # Check if the response is a JSON string and extract the actual message
         try:
@@ -111,7 +111,7 @@ async def transcribe_audio_gemini_endpoint(
 async def chat_endpoint(message: Message, db: Session = Depends(get_db)):
     """Handle text-based chat messages from the frontend."""
     try:
-        response = process_chat_message(message.text, db)
+        response = await process_chat_message(message.text, db)
         
         # Check if the response is a JSON string and extract the actual message
         try:

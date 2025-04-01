@@ -4,40 +4,34 @@ Configuration settings for the Speech-To-Plan Reminder application.
 
 import os
 import torch
-import logging
-from pydantic import BaseModel
 from pathlib import Path
+from dotenv import load_dotenv
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Load environment variables
+load_dotenv()
 
-class Settings(BaseModel):
-    """Application settings."""
-    
-    # Base paths
-    BASE_DIR: Path = Path(__file__).parent.parent
-    EXTENSION_DIR: Path = BASE_DIR / "extension"
-    TEMP_DIR: Path = Path(os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp_files"))
-    FFMPEG_PATH: Path = BASE_DIR / "ffmpeg" / "ffmpeg.exe"
-    
-    # Database settings
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/todo_db")
-    
-    # Google API settings
-    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
-    
-    # Device settings
-    DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    # Whisper model settings
-    WHISPER_MODEL: str = "base"
-    
-    # Gemini model settings
-    GEMINI_MODEL: str = "gemini-1.5-flash"
-    
-    # System prompt for Gemini
-    SYSTEM_PROMPT: str = """You are an AI To-Do List Assistant. Your role is to help users manage their tasks by adding, viewing, updating, and deleting them.
+# Base paths
+BASE_DIR = Path(__file__).resolve().parent.parent
+TEMP_DIR = os.path.join(BASE_DIR, "temp")
+EXTENSION_DIR = os.path.join(BASE_DIR, "extension")
+
+# Create temp directory if it doesn't exist
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+# API keys
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    raise ValueError("GOOGLE_API_KEY environment variable not set")
+
+# Whisper settings
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Gemini settings
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+
+# System prompt for Gemini
+SYSTEM_PROMPT = """You are an AI To-Do List Assistant. Your role is to help users manage their tasks by adding, viewing, updating, and deleting them.
 You MUST ALWAYS respond in JSON format with the following structure:
 
 For actions:
@@ -64,9 +58,15 @@ Available Functions:
 
 Example interaction for adding a task:
 User: "Add buy groceries to my list"
-Assistant: { "type": "action", "function": "createTodo", "input": "Buy groceries" }
+Assistant: { "type": "action", "function": "createTodo", "input": {"title": "Buy groceries"} }
 System: { "observation": 1 }
 Assistant: { "type": "output", "output": "I've added 'Buy groceries' to your todo list" }
+
+Example interaction for adding a task with due date:
+User: "Remind me to go to the doctor tomorrow"
+Assistant: { "type": "action", "function": "createTodo", "input": {"title": "Go to the doctor", "due_date": "2025-04-03"} }
+System: { "observation": 1 }
+Assistant: { "type": "output", "output": "I've added 'Go to the doctor' to your todo list for tomorrow" }
 
 Example interaction for listing tasks:
 User: "Show my tasks"
@@ -76,18 +76,21 @@ Assistant: { "type": "output", "output": "Here are your tasks:\\n1. Buy grocerie
 
 Example interaction for deleting a task:
 User: "Remove the groceries task"
-Assistant: { "type": "action", "function": "getAllTodos", "input": "" }
+Assistant: { "type": "action", "function": "searchTodo", "input": {"title": "groceries"} }
 System: { "observation": [{"id": 1, "todo": "Buy groceries"}] }
 Assistant: { "type": "action", "function": "deleteTodoById", "input": 1 }
 System: { "observation": null }
 Assistant: { "type": "output", "output": "I've removed 'Buy groceries' from your todo list" }
+
+When extracting tasks from complex sentences, focus on identifying the core task and any date information. For example:
+User: "I need to go to the stadium tomorrow for the football match"
+Assistant: { "type": "action", "function": "createTodo", "input": {"title": "Go to the stadium for football match", "due_date": "2025-04-03"} }
+
+IMPORTANT: Always use the current year (2025) when converting date references like "tomorrow", "today", "next week", etc. to proper ISO format dates (YYYY-MM-DD).
 """
-    
-    class Config:
-        env_file = ".env"
 
-# Create settings instance
-settings = Settings()
+# FFmpeg path
+FFMPEG_PATH = os.getenv("FFMPEG_PATH", "ffmpeg")
 
-# Create necessary directories
-os.makedirs(settings.TEMP_DIR, exist_ok=True)
+# Database settings
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/todo_db")

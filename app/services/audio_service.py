@@ -1,19 +1,23 @@
 """
-Audio processing service for the Speech-To-Plan Reminder application.
+Audio service for the Speech-To-Plan Reminder application.
 """
 
-import os
 import base64
 import logging
+import os
 import numpy as np
-import subprocess
-import soundfile as sf
+import whisper
 from typing import Optional
 
-from app.config import settings
+from app.config import TEMP_DIR, DEVICE, WHISPER_MODEL
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Load Whisper model
+logger.info(f"Loading Whisper model on {DEVICE}...")
+model = whisper.load_model(WHISPER_MODEL)
+model.to(DEVICE)
 
 def save_audio_file(audio_data: str) -> Optional[str]:
     """
@@ -23,18 +27,19 @@ def save_audio_file(audio_data: str) -> Optional[str]:
         audio_data: Base64 encoded audio data
         
     Returns:
-        Path to saved file or None if failed
+        Path to saved audio file or None if error
     """
     try:
         # Remove data URL prefix if present
         if 'base64,' in audio_data:
             audio_data = audio_data.split('base64,')[1]
-
+        
         # Decode base64 data
         audio_bytes = base64.b64decode(audio_data)
-
+        
         # Create temporary file
-        temp_path = os.path.join(settings.TEMP_DIR, f'temp_audio_{os.urandom(8).hex()}.mp3')
+        os.makedirs(TEMP_DIR, exist_ok=True)
+        temp_path = os.path.join(TEMP_DIR, f'temp_audio_{os.urandom(8).hex()}.mp3')
         
         with open(temp_path, 'wb') as f:
             f.write(audio_bytes)
@@ -46,95 +51,47 @@ def save_audio_file(audio_data: str) -> Optional[str]:
 
 def process_audio_file(file_path: str) -> Optional[np.ndarray]:
     """
-    Process audio file and convert to required format.
+    Process audio file and return numpy array.
     
     Args:
         file_path: Path to audio file
         
     Returns:
-        Processed audio as numpy array or None if failed
+        Processed audio as numpy array or None if error
     """
     try:
-        # Convert audio to WAV format with required specifications
-        output_path = file_path.rsplit('.', 1)[0] + '_converted.wav'
+        # Load audio using whisper's load_audio function
+        audio = whisper.load_audio(file_path)
         
-        # FFmpeg command to convert audio to the required format
-        command = [
-            str(settings.FFMPEG_PATH),
-            '-i', file_path,
-            '-ar', '16000',  # Sample rate: 16kHz
-            '-ac', '1',      # Mono channel
-            '-c:a', 'pcm_f32le',  # 32-bit float
-            '-f', 'wav',
-            '-y',  # Overwrite output file if it exists
-            output_path
-        ]
-        
-        logger.debug(f"Running FFmpeg command: {' '.join(command)}")
-        
-        # Run ffmpeg command
-        process = subprocess.run(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        
-        if process.returncode != 0:
-            logger.error(f"FFmpeg error: {process.stderr}")
+        # Check if audio is valid
+        if audio is None or len(audio) == 0:
+            logger.error("Audio file is empty or invalid")
             return None
         
-        # Load converted audio file
-        audio, _ = sf.read(output_path)
-        
-        # Clean up temporary files
-        try:
-            os.remove(output_path)
-        except Exception as e:
-            logger.warning(f"Failed to remove temporary file {output_path}: {str(e)}")
+        if not np.isfinite(audio).all():
+            logger.error("Audio contains invalid values")
+            return None
         
         return audio
     except Exception as e:
         logger.error(f"Error processing audio file: {str(e)}")
         return None
 
-def process_audio_in_chunks(audio: np.ndarray, chunk_duration: int = 30, overlap: int = 1) -> list:
+def transcribe_audio(audio: np.ndarray) -> str:
     """
-    Process long audio files in chunks.
+    Transcribe audio using Whisper.
     
     Args:
         audio: Audio data as numpy array
-        chunk_duration: Duration of each chunk in seconds
-        overlap: Overlap between chunks in seconds
         
     Returns:
-        List of audio chunks
+        Transcribed text
     """
     try:
-        # Calculate chunk size and overlap in samples
-        sample_rate = 16000  # Assuming 16kHz sample rate
-        chunk_size = chunk_duration * sample_rate
-        overlap_size = overlap * sample_rate
+        # Transcribe audio
+        result = model.transcribe(audio)
         
-        # Calculate number of chunks
-        audio_length = len(audio)
-        num_chunks = max(1, int(np.ceil((audio_length - overlap_size) / (chunk_size - overlap_size))))
-        
-        chunks = []
-        for i in range(num_chunks):
-            # Calculate start and end indices
-            start = i * (chunk_size - overlap_size)
-            end = min(start + chunk_size, audio_length)
-            
-            # Extract chunk
-            chunk = audio[start:end]
-            chunks.append(chunk)
-            
-            # Break if we've reached the end of the audio
-            if end == audio_length:
-                break
-        
-        return chunks
+        return result["text"].strip()
     except Exception as e:
-        logger.error(f"Error processing audio in chunks: {str(e)}")
-        return [audio]  # Return the original audio as a single chunk
+        logger.error(f"Error transcribing audio: {str(e)}")
+        raise

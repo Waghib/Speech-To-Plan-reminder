@@ -351,9 +351,13 @@ def process_chat_message(message: str, db: Session) -> str:
                 
                 # Create the task directly
                 logger.info(f"Creating task directly: '{task_title}', due: {due_date}")
-                todo = create_todo(db, task_title, due_date)
-                logger.info(f"Created task directly: {task_title}, due: {due_date}, id: {todo.id}")
-                return f"I'll add '{task_title}' to your tasks."
+                try:
+                    todo = create_todo(db, task_title, due_date)
+                    logger.info(f"Created task directly: {task_title}, due: {due_date}, id: {todo.id}")
+                    return f"I'll add '{task_title}' to your tasks."
+                except Exception as e:
+                    logger.error(f"Error creating task: {str(e)}")
+                    return f"Sorry, I encountered an error creating your task: {str(e)}"
             except Exception as e:
                 logger.error(f"Error processing task creation: {str(e)}")
                 # Try to use Gemini for more complex sentences
@@ -417,9 +421,13 @@ def process_chat_message(message: str, db: Session) -> str:
                     
                     # Create todo
                     logger.info(f"Creating todo from AI response: {title}, due: {due_date}")
-                    todo = create_todo(db, title, due_date)
-                    
-                    return f"Added '{title}' to your tasks!"
+                    try:
+                        todo = create_todo(db, title, due_date)
+                        logger.info(f"Created todo from AI response: {title}, due: {due_date}, id: {todo.id}")
+                        return f"Added '{title}' to your tasks!"
+                    except Exception as e:
+                        logger.error(f"Error creating task from AI response: {str(e)}")
+                        return f"Sorry, I encountered an error creating your task: {str(e)}"
                 
                 elif function_name == "searchTodo":
                     # Search todos

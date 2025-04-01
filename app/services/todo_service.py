@@ -118,6 +118,65 @@ def search_todos(db: Session, query: str) -> List[Todo]:
         )
     ).all()
 
+def check_duplicate_task(db: Session, title: str, due_date: Optional[str] = None) -> bool:
+    """
+    Check if a task with the same title and due date already exists.
+    
+    Args:
+        db: Database session
+        title: Task title
+        due_date: Optional due date in ISO format
+        
+    Returns:
+        True if a duplicate exists, False otherwise
+    """
+    # Normalize the title for comparison (case insensitive)
+    normalized_title = title.lower().strip()
+    
+    # Get all todos with similar titles
+    # Extract the core task name without date indicators
+    core_title = normalized_title
+    for date_indicator in ["tomorrow", "today", "next week", "next month"]:
+        core_title = core_title.replace(date_indicator, "").strip()
+    
+    search_term = f"%{core_title}%"
+    todos = db.query(Todo).filter(Todo.todo.ilike(search_term)).all()
+    
+    # If due_date is provided, parse it
+    parsed_due_date = None
+    if due_date:
+        try:
+            parsed_due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00')).date()
+        except Exception as e:
+            logger.error(f"Error parsing due date: {str(e)}")
+    
+    # Check each todo for exact match
+    for todo in todos:
+        # Normalize todo title
+        todo_title = todo.todo.lower().strip()
+        # Extract core todo title without date indicators
+        core_todo_title = todo_title
+        for date_indicator in ["tomorrow", "today", "next week", "next month"]:
+            core_todo_title = core_todo_title.replace(date_indicator, "").strip()
+        
+        # Compare core titles (case insensitive)
+        if core_todo_title == core_title:
+            # If no due date is specified, consider it a duplicate
+            if not due_date or not todo.due_date:
+                return True
+            # If due dates match, it's a duplicate
+            elif todo.due_date and parsed_due_date and todo.due_date.date() == parsed_due_date:
+                return True
+            # If the existing task has no due date but we're adding one, consider it a duplicate
+            # and we'll update the existing task with the due date
+            elif not todo.due_date and parsed_due_date:
+                # Update the existing task with the due date
+                todo.due_date = parsed_due_date
+                db.commit()
+                return True
+    
+    return False
+
 def delete_todo_by_name(db: Session, task_name: str) -> Tuple[bool, int]:
     """
     Delete a todo by name.

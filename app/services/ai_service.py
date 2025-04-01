@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
 from app.config import settings
-from app.services.todo_service import get_all_todos, create_todo, delete_todo_by_id, search_todos, delete_todo_by_name
+from app.services.todo_service import get_all_todos, create_todo, delete_todo_by_id, search_todos, delete_todo_by_name, check_duplicate_task
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -227,36 +227,72 @@ def process_chat_message(message: str, db: Session) -> str:
         # Check for direct task creation commands
         if any(phrase in message.lower() for phrase in ["i have a", "i have", "add a", "add", "create a", "create", "schedule a", "schedule", "remind me"]):
             # Extract task details
-            task_title = message
             due_date = None
+            date_indicators = {
+                "tomorrow": 1,
+                "next week": 7,
+                "next month": 30,
+                "today": 0
+            }
             
-            # Look for date indicators
-            if "tomorrow" in message.lower():
-                tomorrow = datetime.now() + timedelta(days=1)
-                due_date = tomorrow.strftime("%Y-%m-%d")
-                task_title = message.replace("tomorrow", "").strip()
-                
-                # Handle different prefixes
-                if task_title.lower().startswith("i have a"):
-                    task_title = task_title[8:].strip()
-                elif task_title.lower().startswith("i have"):
-                    task_title = task_title[6:].strip()
-                elif task_title.lower().startswith("add a"):
+            for indicator, days in date_indicators.items():
+                if indicator in message.lower():
+                    if days == 0:  # today
+                        target_date = datetime.now()
+                    else:
+                        target_date = datetime.now() + timedelta(days=days)
+                    due_date = target_date.strftime("%Y-%m-%d")
+                    break
+            
+            # Extract the task title based on common patterns
+            if message.lower().startswith("i have a"):
+                task_title = message[8:].strip()
+            elif message.lower().startswith("i have"):
+                task_title = message[6:].strip()
+            elif message.lower().startswith("add a"):
+                task_title = message[5:].strip()
+            elif message.lower().startswith("add"):
+                task_title = message[3:].strip()
+            elif message.lower().startswith("create a"):
+                task_title = message[8:].strip()
+            elif message.lower().startswith("create"):
+                task_title = message[6:].strip()
+            elif message.lower().startswith("schedule a"):
+                task_title = message[10:].strip()
+            elif message.lower().startswith("schedule"):
+                task_title = message[8:].strip()
+            elif message.lower().startswith("remind me"):
+                task_title = message[9:].strip()
+                if task_title.startswith("to"):
+                    task_title = task_title[2:].strip()
+                elif task_title.startswith("about"):
                     task_title = task_title[5:].strip()
-                elif task_title.lower().startswith("add"):
-                    task_title = task_title[3:].strip()
-                elif task_title.lower().startswith("create a"):
-                    task_title = task_title[8:].strip()
-                elif task_title.lower().startswith("create"):
-                    task_title = task_title[6:].strip()
-                elif task_title.lower().startswith("schedule a"):
-                    task_title = task_title[10:].strip()
-                elif task_title.lower().startswith("schedule"):
-                    task_title = task_title[8:].strip()
-                
-                # Capitalize the first letter of the task
-                if task_title:
-                    task_title = task_title[0].upper() + task_title[1:] if len(task_title) > 1 else task_title.upper()
+            
+            # Remove date indicators from the task title to get the core task
+            core_task_title = task_title
+            for indicator in date_indicators.keys():
+                if indicator in core_task_title.lower():
+                    # Handle different positions of date indicators
+                    parts = re.split(r'\b' + re.escape(indicator) + r'\b', core_task_title.lower(), flags=re.IGNORECASE)
+                    if len(parts) > 1:
+                        # Join all parts except the indicator
+                        core_task_title = " ".join([p.strip() for p in parts if p.strip()])
+            
+            # Clean up any extra spaces
+            core_task_title = re.sub(r'\s+', ' ', core_task_title).strip()
+            
+            # Capitalize the first letter of the task
+            if core_task_title:
+                task_title = core_task_title[0].upper() + core_task_title[1:] if len(core_task_title) > 1 else core_task_title.upper()
+            else:
+                task_title = "Task"  # Fallback if we couldn't extract a title
+            
+            # Check for duplicate tasks before creating
+            is_duplicate = check_duplicate_task(db, task_title, due_date)
+            
+            if is_duplicate:
+                logger.info(f"Duplicate task detected: '{task_title}', due: {due_date}")
+                return f"You already have '{task_title}' in your tasks."
             
             # Create the task directly
             logger.info(f"Creating task directly: '{task_title}', due: {due_date}")
@@ -312,6 +348,13 @@ def process_chat_message(message: str, db: Session) -> str:
                     if isinstance(function_input, dict):
                         title = function_input.get("title", "")
                         due_date = function_input.get("due_date")
+                    
+                    # Check for duplicate tasks before creating
+                    is_duplicate = check_duplicate_task(db, title, due_date)
+                    
+                    if is_duplicate:
+                        logger.info(f"Duplicate task detected: '{title}', due: {due_date}")
+                        return f"You already have '{title}' in your tasks."
                     
                     # Create todo
                     logger.info(f"Creating todo from AI response: {title}, due: {due_date}")

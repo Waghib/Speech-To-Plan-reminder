@@ -314,6 +314,12 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             const tasks = await response.json();
+            console.log('Tasks data:', tasks);
+            // Log the first task to see its structure
+            if (tasks.length > 0) {
+                console.log('First task structure:', JSON.stringify(tasks[0], null, 2));
+                console.log('Task properties:', Object.keys(tasks[0]));
+            }
             
             // Clear task list
             taskList.innerHTML = '';
@@ -354,7 +360,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 const taskText = document.createElement('div');
                 taskText.className = `task-text ${task.completed ? 'task-completed' : ''}`;
-                taskText.textContent = task.title;
+                // Use the correct field name from the database model (todo)
+                taskText.textContent = task.todo || task.text || task.title || 'Untitled Task';
                 
                 const taskDetails = document.createElement('div');
                 taskDetails.className = 'task-details';

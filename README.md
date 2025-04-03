@@ -13,6 +13,7 @@ The diagram above illustrates the complete flow of the Speech-To-Plan Reminder s
 - **Voice-to-Text Conversion**: Advanced speech recognition using OpenAI Whisper
 - **AI-Powered Task Analysis**: Intelligent task processing using Google's Gemini AI
 - **Browser Integration**: Seamlessly works as a Chrome extension for easy access
+- **Hybrid Architecture**: Node.js and Python servers working together for optimal performance
 - **Persistent Storage**: Secure PostgreSQL database for reliable data management
 - **Modern Web Interface**: Intuitive UI for easy interaction
 - **Google Calendar Integration**: Automatically sync tasks with due dates to your Google Calendar
@@ -24,7 +25,9 @@ The diagram above illustrates the complete flow of the Speech-To-Plan Reminder s
   - Google Gemini AI - Advanced natural language processing
   
 - **Backend**:
-  - FastAPI - High-performance web framework
+  - Node.js - Event-driven JavaScript runtime for real-time communication
+  - Express.js - Web application framework for Node.js
+  - FastAPI - High-performance Python web framework
   - SQLAlchemy - SQL toolkit and ORM
   - Python 3.8+
   - Google Calendar API - Calendar integration and event management
@@ -36,9 +39,26 @@ The diagram above illustrates the complete flow of the Speech-To-Plan Reminder s
 - **Database**:
   - PostgreSQL - Robust, reliable database system
 
+## 🏗️ Architecture
+
+The application uses a hybrid architecture:
+
+- **Node.js Server (Port 3000)**:
+  - Acts as an API gateway for the Chrome extension
+  - Handles real-time communication
+  - Forwards requests to the Python backend
+  - Provides better performance for concurrent connections
+
+- **Python Server (Port 8000)**:
+  - Manages core business logic
+  - Handles database operations
+  - Processes AI-related tasks
+  - Integrates with Google Calendar
+
 ## Prerequisites
 
 - Python 3.8 or higher
+- Node.js 14.x or higher
 - PostgreSQL database
 - FFmpeg for audio processing
 - Modern web browser (for extension)
@@ -58,21 +78,26 @@ The diagram above illustrates the complete flow of the Speech-To-Plan Reminder s
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
-3. Install dependencies:
+3. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-4. Set up environment variables:
-   - Copy `.env.example` to `.env`
-   - Configure your database and other settings
+4. Install Node.js dependencies:
+   ```bash
+   npm install
+   ```
 
-5. Initialize the database:
+5. Set up environment variables:
+   - Copy `.env.example` to `.env`
+   - Configure your database, API keys, and other settings
+
+6. Initialize the database:
    ```bash
    python init_db.py
    ```
 
-6. Set up Google Calendar Integration:
+7. Set up Google Calendar Integration:
    - Go to Google Cloud Console
    - Create a new project or select an existing one
    - Enable the Google Calendar API
@@ -81,12 +106,22 @@ The diagram above illustrates the complete flow of the Speech-To-Plan Reminder s
 
 ## Running the Application
 
-1. Start the server:
+1. Start both servers using the provided script:
    ```bash
-   uvicorn server:app --reload
+   # On Windows
+   .\start-servers.ps1
+   
+   # On Linux/Mac
+   # Use the equivalent bash script
    ```
 
-2. Access the application through your web browser or the browser extension
+   This will start:
+   - Python server on port 8000
+   - Node.js server on port 3000
+
+2. Access the application through the browser extension:
+   - Load the extension from the `extension` directory in Chrome
+   - Click on the extension icon to open the popup interface
 
 3. When adding a task with a due date, the application will:
    - Save the task in the local database

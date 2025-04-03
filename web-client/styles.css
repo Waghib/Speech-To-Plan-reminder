@@ -1,0 +1,366 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f5f5f5;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Main App Container */
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    max-width: 100%;
+    margin: 0 auto;
+    background-color: white;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Header */
+.app-header {
+    background-color: #4285f4;
+    color: white;
+    padding: 15px 20px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.app-header h1 {
+    font-size: 1.5rem;
+    margin: 0;
+}
+
+/* Content Area */
+.app-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* Chat Section */
+.chat-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #e0e0e0;
+}
+
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 10px;
+}
+
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.message {
+    margin-bottom: 15px;
+    padding: 10px 15px;
+    border-radius: 18px;
+    max-width: 80%;
+    word-wrap: break-word;
+}
+
+.message.user {
+    background-color: #e3f2fd;
+    color: #0d47a1;
+    margin-left: auto;
+    border-bottom-right-radius: 5px;
+}
+
+.message.assistant {
+    background-color: #f1f1f1;
+    color: #333;
+    margin-right: auto;
+    border-bottom-left-radius: 5px;
+}
+
+.chat-input-container {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    background-color: #f9f9f9;
+    border-top: 1px solid #e0e0e0;
+}
+
+.chat-input {
+    flex: 1;
+    padding: 10px 15px;
+    border: 1px solid #ddd;
+    border-radius: 20px;
+    outline: none;
+    font-size: 14px;
+}
+
+.record-btn, .send-btn {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    margin: 0 5px;
+    color: #4285f4;
+}
+
+.record-btn:hover, .send-btn:hover {
+    color: #0d47a1;
+}
+
+.recording-status {
+    padding: 10px;
+    background-color: #fff3cd;
+    display: none;
+}
+
+.recording-status.active {
+    display: block;
+}
+
+.progress {
+    height: 5px;
+    margin-bottom: 10px;
+    border-radius: 3px;
+    background-color: #e0e0e0;
+}
+
+.progress-bar {
+    background-color: #ea4335;
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.1s ease;
+}
+
+.stop-btn {
+    background-color: #ea4335;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.stop-btn:disabled {
+    background-color: #f5a5a5;
+    cursor: not-allowed;
+}
+
+/* Tasks Section */
+.tasks-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #fafafa;
+}
+
+.tasks-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.tasks-header h2 {
+    font-size: 1.2rem;
+    margin: 0;
+}
+
+.tasks-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.refresh-btn, .filter-btn {
+    background: none;
+    border: none;
+    font-size: 1rem;
+    cursor: pointer;
+    color: #666;
+}
+
+.refresh-btn:hover, .filter-btn:hover {
+    color: #4285f4;
+}
+
+.tasks-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.filter-status {
+    margin-bottom: 10px;
+    padding: 0 5px;
+}
+
+.task-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 15px;
+    border-bottom: 1px solid #eee;
+    background-color: white;
+    margin-bottom: 8px;
+    border-radius: 5px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    gap: 10px;
+}
+
+.task-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: #4285f4;
+    flex-shrink: 0;
+}
+
+.task-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.task-text {
+    font-weight: 500;
+    margin-bottom: 3px;
+    color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.task-text.task-completed {
+    text-decoration: line-through;
+    color: #888;
+}
+
+.task-details {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.task-date {
+    font-size: 12px;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.date-today {
+    color: #4285f4;
+}
+
+.date-tomorrow {
+    color: #0f9d58;
+}
+
+.date-past {
+    color: #ea4335;
+}
+
+.task-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.task-delete-btn {
+    background: none;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    color: #666;
+    padding: 5px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.task-delete-btn:hover {
+    color: #ea4335;
+    background-color: #f5f5f5;
+}
+
+.loading-tasks {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #666;
+}
+
+/* Footer */
+.app-footer {
+    background-color: #f9f9f9;
+    border-top: 1px solid #e0e0e0;
+    padding: 10px;
+}
+
+.tabs {
+    display: flex;
+    justify-content: space-around;
+}
+
+.tab-btn {
+    background: none;
+    border: none;
+    padding: 8px 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: #666;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.tab-btn i {
+    font-size: 1.2rem;
+    margin-bottom: 5px;
+}
+
+.tab-btn.active {
+    color: #4285f4;
+}
+
+/* Responsive Design */
+@media (min-width: 768px) {
+    .app-container {
+        max-width: 1200px;
+        height: 90vh;
+        margin: 5vh auto;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    
+    .app-footer {
+        display: none;
+    }
+    
+    .app-content {
+        flex-direction: row;
+    }
+    
+    .chat-section {
+        flex: 3;
+    }
+    
+    .tasks-section {
+        flex: 2;
+    }
+}

@@ -17,6 +17,10 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Serve static files from the web-client directory
+app.use(express.static('../web-client'));
+
+
 // Initialize Google Auth for Gemini API
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
